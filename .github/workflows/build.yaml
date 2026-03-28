@@ -1,0 +1,20 @@
+name: Build
+on:
+  push:
+    branches:
+      - main
+      - flagger
+permissions:
+  contents: read
+  packages: write
+jobs:
+  test:
+    uses: clambin/workflows/.github/workflows/test.yaml@main
+    secrets:
+      codecov-token: ${{ secrets.CODECOV_TOKEN }}
+  build:
+    needs:
+      - test
+    uses: clambin/workflows/.github/workflows/build.yaml@main
+    with:
+      image: ghcr.io/clambin/forward-auth
