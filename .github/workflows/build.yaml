@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - main
-      - flagger
+      - build
 permissions:
   contents: read
   packages: write

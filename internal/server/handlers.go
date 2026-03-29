@@ -87,11 +87,14 @@ func logoutHandler(
 		}
 
 		// clear the session cookie
+		// TODO: Domain
 		http.SetCookie(w, &http.Cookie{
-			Name:    cookieName,
-			Value:   "",
-			Path:    "/",
-			Expires: time.Now().Add(-time.Hour),
+			Name:     cookieName,
+			Value:    "",
+			Path:     "/",
+			Expires:  time.Now().Add(-time.Hour),
+			Secure:   true,
+			HttpOnly: true,
 		})
 
 		logger.Info("logout successful", "user", user)
@@ -126,11 +129,14 @@ func loginHandler(
 			http.Error(w, "failed to validate login", http.StatusUnauthorized)
 		}
 
+		// TODO: Domain
 		http.SetCookie(w, &http.Cookie{
-			Name:    cookieName,
-			Value:   sessionID,
-			Path:    "/",
-			Expires: time.Now().Add(ttl),
+			Name:     cookieName,
+			Value:    sessionID,
+			Path:     "/",
+			Expires:  time.Now().Add(ttl),
+			Secure:   true,
+			HttpOnly: true,
 		})
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 
