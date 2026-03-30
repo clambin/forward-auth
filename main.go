@@ -52,7 +52,6 @@ func main() {
 	}
 
 	logger.Info("starting forward-auth", "version", version)
-	logger.Debug("configuration", "config", cfg)
 
 	var g errgroup.Group
 	// Prometheus
