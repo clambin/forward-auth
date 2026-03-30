@@ -17,10 +17,15 @@ type OIDCConfiguration struct {
 	IssuerURL    string `yaml:"issuer_url"`
 }
 
+// note: this works with Google's OIDC provider. May not work 100% with other providers.
+
 type UserInfo struct {
-	Subject string
-	Profile string
-	Email   string
+	Email         string `json:"email"`
+	EmailVerified bool   `json:"email_verified"`
+	Name          string `json:"name"`
+	GivenName     string `json:"given_name"`
+	FamilyName    string `json:"family_name"`
+	Picture       string `json:"picture"`
 }
 
 type Authenticator interface {
