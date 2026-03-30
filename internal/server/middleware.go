@@ -48,6 +48,7 @@ func withRequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			logger.Debug("request",
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
+				slog.Int("status", lw.code),
 				slog.Duration("duration", time.Since(start)),
 			)
 		})
