@@ -27,6 +27,7 @@ type ForwardAuth interface {
 type Configuration struct {
 	Addr       string `yaml:"addr"`
 	CookieName string `yaml:"cookieName"`
+	Domain     string `yaml:"domain"`
 }
 
 var DefaultConfiguration = Configuration{
@@ -51,6 +52,7 @@ func route(mux *http.ServeMux, configuration Configuration, forwardAuth ForwardA
 	))
 	forwardAuthMux.Handle("/_oauth/logout", logoutHandler(
 		configuration.CookieName,
+		configuration.Domain,
 		forwardAuth,
 		logger.With("handler", "logout"),
 	))
@@ -58,6 +60,7 @@ func route(mux *http.ServeMux, configuration Configuration, forwardAuth ForwardA
 	mux.Handle("/", forwardAuthMiddleware(logger)(forwardAuthMux))
 	mux.Handle("/_oauth", loginHandler(
 		configuration.CookieName,
+		configuration.Domain,
 		forwardAuth,
 		logger.With("handler", "login"),
 	))

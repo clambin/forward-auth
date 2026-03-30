@@ -51,5 +51,4 @@ func TestOIDCAuthenticator(t *testing.T) {
 	userInfo, err := a.GetUserInfo(ctx, code)
 	require.NoError(t, err)
 	assert.Equal(t, "foo@example.com", userInfo.Email)
-	t.Log(userInfo)
 }

@@ -56,6 +56,7 @@ func forwardAuthHandler(
 // This means that the user's next request has an invalid cookie, triggering a new oauth flow.
 func logoutHandler(
 	cookieName string,
+	domain string,
 	forwardAuth ForwardAuth,
 	logger *slog.Logger,
 ) http.Handler {
@@ -87,10 +88,10 @@ func logoutHandler(
 		}
 
 		// clear the session cookie
-		// TODO: Domain
 		http.SetCookie(w, &http.Cookie{
 			Name:     cookieName,
 			Value:    "",
+			Domain:   domain,
 			Path:     "/",
 			Expires:  time.Now().Add(-time.Hour),
 			Secure:   true,
@@ -109,6 +110,7 @@ func logoutHandler(
 // This will trigger another call to forwardAuthHandler, which authenticates the user and authorizes the request.
 func loginHandler(
 	cookieName string,
+	domain string,
 	forwardAuth ForwardAuth,
 	logger *slog.Logger,
 ) http.Handler {
@@ -129,10 +131,10 @@ func loginHandler(
 			http.Error(w, "failed to validate login", http.StatusUnauthorized)
 		}
 
-		// TODO: Domain
 		http.SetCookie(w, &http.Cookie{
 			Name:     cookieName,
 			Value:    sessionID,
+			Domain:   domain,
 			Path:     "/",
 			Expires:  time.Now().Add(ttl),
 			Secure:   true,

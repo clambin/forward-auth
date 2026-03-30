@@ -31,9 +31,9 @@ var DefaultConfiguration = Configuration{
 
 type Configuration struct {
 	Server      server.Configuration    `yaml:"server"`
-	ForwardAuth auth.Configuration      `yaml:"forwardAuth"`
 	Logger      LoggerConfiguration     `yaml:"logger"`
 	Prometheus  PrometheusConfiguration `yaml:"prometheus"`
+	ForwardAuth auth.Configuration      `yaml:"forwardAuth"`
 }
 
 type LoggerConfiguration struct {
