@@ -19,7 +19,8 @@ func forwardAuthHandler(
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger.Debug("handling request", "url", r.URL)
+		logger.Debug("handling request", "url", r.URL.String())
+
 		// authenticate the user: get the session cookie and check if it's in our Sessions Store
 		var user string
 		sessionCookie, err := r.Cookie(cookieName)
@@ -61,7 +62,7 @@ func logoutHandler(
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger.Debug("handling request", "url", r.URL)
+		logger.Debug("handling request", "url", r.URL.String())
 
 		// get the original request
 		_, u := originalRequest(r)
@@ -115,7 +116,7 @@ func loginHandler(
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger.Debug("handling request", "url", r.URL)
+		logger.Debug("handling request", "url", r.URL.String())
 
 		state := r.URL.Query().Get("state")
 		code := r.URL.Query().Get("code")
@@ -148,7 +149,7 @@ func loginHandler(
 
 func healthCheckHandler(c RedisClient, logger *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger.Debug("handling request", "url", r.URL)
+		//logger.Debug("handling request", "url", r.URL.String())
 		if c != nil {
 			if err := c.Ping(r.Context()).Err(); err != nil {
 				logger.Warn("failed to ping redis", "error", err)

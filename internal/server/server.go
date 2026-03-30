@@ -57,7 +57,7 @@ func route(mux *http.ServeMux, configuration Configuration, forwardAuth ForwardA
 		logger.With("handler", "logout"),
 	))
 
-	mux.Handle("/", forwardAuthMiddleware(logger)(forwardAuthMux))
+	mux.Handle("/", forwardAuthMiddleware()(forwardAuthMux))
 	mux.Handle("/_oauth", loginHandler(
 		configuration.CookieName,
 		configuration.Domain,
@@ -68,13 +68,11 @@ func route(mux *http.ServeMux, configuration Configuration, forwardAuth ForwardA
 }
 
 // forwardAuthMiddleware takes a request from the forwardAuth middleware and restores the original request method and URL.
-func forwardAuthMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
+func forwardAuthMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			r = r.Clone(r.Context())
 			r.Method, r.URL = originalRequest(r)
-
-			logger.Debug("handling request", "url", r.URL.String())
 			next.ServeHTTP(w, r)
 		})
 	}
