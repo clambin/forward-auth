@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/url"
 	"time"
@@ -14,7 +15,8 @@ import (
 )
 
 var (
-	ErrAuthzFailed = fmt.Errorf("user not authorized to access resource")
+	ErrNotAuthorized = errors.New("user not authorized to access resource")
+	ErrNoSession     = errors.New("no valid session found")
 )
 
 type authorizer interface {
@@ -53,12 +55,15 @@ func New(ctx context.Context, configuration Configuration) (*ForwardAuthServer, 
 func (s *ForwardAuthServer) ValidateSession(ctx context.Context, sessionID string, url *url.URL) (string, error) {
 	// authenticate the user: see if we have a session in our store
 	user, err := s.sessionStore.Get(ctx, sessionID)
+	if errors.Is(err, cache.ErrNotFound) {
+		return "", ErrNoSession
+	}
 	if err != nil {
 		return "", fmt.Errorf("session: %w", err)
 	}
 	// check if the user is allowed to access the resource
 	if !s.authorizer.Allow(url, user) {
-		return "", ErrAuthzFailed
+		return "", ErrNotAuthorized
 	}
 	return user, nil
 }

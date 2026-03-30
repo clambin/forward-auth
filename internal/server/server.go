@@ -1,12 +1,10 @@
 package server
 
 import (
-	"cmp"
 	"context"
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/clambin/forward-auth/internal/auth"
@@ -50,54 +48,31 @@ func New(
 	forwardAuthMux.Handle("/", forwardAuthHandler(
 		configuration.CookieName,
 		forwardAuth,
-		logger.With("handler", "forwardAuth"),
+		logger.With(slog.String("handler", "forwardAuth")),
 	))
 	forwardAuthMux.Handle("/_oauth/logout", logoutHandler(
 		configuration.CookieName,
 		configuration.Domain,
 		forwardAuth,
-		logger.With("handler", "logout"),
+		logger.With(slog.String("handler", "logout")),
 	))
 
 	mux.Handle("/", metrics.mw("forwardAuth")(
-		forwardAuthMiddleware()(forwardAuthMux)),
-	)
+		forwardAuthMiddleware()(
+			withRequestLogger(logger)(forwardAuthMux),
+		),
+	))
 	mux.Handle("/_oauth", metrics.mw("login")(
-		loginHandler(
-			configuration.CookieName,
-			configuration.Domain,
-			forwardAuth,
-			logger.With("handler", "login"),
+		withRequestLogger(logger)(
+			loginHandler(
+				configuration.CookieName,
+				configuration.Domain,
+				forwardAuth,
+				logger.With("handler", "login"),
+			),
 		),
 	))
 	mux.Handle("/healthz", healthCheckHandler(redisClient, logger.With("handler", "healthCheck")))
 
 	return mux
-}
-
-// forwardAuthMiddleware takes a request from the forwardAuth middleware and restores the original request method and URL.
-func forwardAuthMiddleware() func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			r = r.Clone(r.Context())
-			r.Method, r.URL = originalRequest(r)
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-func originalRequest(r *http.Request) (string, *url.URL) {
-	path := cmp.Or(r.Header.Get("X-Forwarded-Uri"), "/")
-	var rawQuery string
-	if n := strings.Index(path, "?"); n > 0 {
-		rawQuery = path[n+1:]
-		path = path[:n]
-	}
-
-	return cmp.Or(r.Header.Get("X-Forwarded-Method"), http.MethodGet), &url.URL{
-		Scheme:   cmp.Or(r.Header.Get("X-Forwarded-Proto"), "https"),
-		Host:     cmp.Or(r.Header.Get("X-Forwarded-Host"), ""),
-		Path:     path,
-		RawQuery: rawQuery,
-	}
 }

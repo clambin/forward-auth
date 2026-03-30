@@ -45,7 +45,7 @@ func TestForwardAuth(t *testing.T) {
 	// no session exists: request should be denied
 	var sessionID string
 	user, err := fa.ValidateSession(ctx, sessionID, &url.URL{Host: "www.example.com"})
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrNoSession)
 	assert.Zero(t, user)
 
 	// initiate a login request: generate the login URL

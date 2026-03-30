@@ -19,38 +19,43 @@ func forwardAuthHandler(
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger.Debug("handling request", "url", r.URL.String())
-
-		// authenticate the user: get the session cookie and check if it's in our Sessions Store
-		var user string
+		// get the session cookie
 		sessionCookie, err := r.Cookie(cookieName)
-		if err == nil {
-			user, err = forwardAuth.ValidateSession(r.Context(), sessionCookie.Value, r.URL)
+		if err != nil {
+			redirectToLoginPage(w, r, forwardAuth, logger)
+			return
 		}
 
-		// if we have a valid session, we can use it to get the user info
-		if err == nil {
+		// authenticate the user: check if the cookie is in our Sessions Store
+		user, err := forwardAuth.ValidateSession(r.Context(), sessionCookie.Value, r.URL)
+		switch {
+		case err == nil:
+			// valid session cookie found: accept the request
 			w.Header().Set("X-Forwarded-User", user)
 			w.WriteHeader(http.StatusOK)
-			return
+		case errors.Is(err, auth.ErrNoSession):
+			// no session cookie found: redirect to login page
+			redirectToLoginPage(w, r, forwardAuth, logger)
+		case errors.Is(err, auth.ErrNotAuthorized):
+			// user is not authorized: reject the request
+			logger.Warn("rejecting request: user is not authorized", "err", err)
+			http.Error(w, "user is not authorized", http.StatusForbidden)
+		default:
+			logger.Warn("rejecting request: failed to validate session", "err", err)
+			http.Error(w, "failed to validate session", http.StatusInternalServerError)
 		}
-
-		if errors.Is(err, auth.ErrAuthzFailed) {
-			logger.Warn("rejecting request: authorization failed", "err", err)
-			http.Error(w, "authorization failed", http.StatusForbidden)
-			return
-		}
-
-		// no valid session cookie found: redirect to login page
-		logger.Warn("rejecting request: no valid session cookie found", "err", err)
-		redirectURL, err := forwardAuth.InitiateLogin(r.Context(), r.URL.String())
-		if err != nil {
-			logger.Warn("rejecting request: failed to redirect to login page", "err", err)
-			http.Error(w, "failed to redirect to login page", http.StatusInternalServerError)
-			return
-		}
-		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 	})
+}
+
+func redirectToLoginPage(w http.ResponseWriter, r *http.Request, forwardAuth ForwardAuth, logger *slog.Logger) {
+	redirectURL, err := forwardAuth.InitiateLogin(r.Context(), r.URL.String())
+	if err != nil {
+		logger.Warn("rejecting request: failed to redirect to login page", "err", err)
+		http.Error(w, "failed to redirect to login page", http.StatusInternalServerError)
+		return
+	}
+	logger.Warn("rejecting request: no valid session cookie found", "err", err)
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 
 // logoutHandler logs out the user: it removes the session from the session store and sends an empty Cookie to the user.
@@ -62,17 +67,15 @@ func logoutHandler(
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger.Debug("handling request", "url", r.URL.String())
-
-		// get the original request
-		_, u := originalRequest(r)
-
-		// authenticate the user: get the session cookie and check if it's in our Sessions Store
-		var user string
+		// get the session cookie
 		sessionCookie, err := r.Cookie(cookieName)
-		if err == nil {
-			user, err = forwardAuth.ValidateSession(r.Context(), sessionCookie.Value, u)
+		if err != nil {
+			redirectToLoginPage(w, r, forwardAuth, logger)
+			return
 		}
+
+		// authenticate the user: check if the cookie is in our Sessions Store
+		user, err := forwardAuth.ValidateSession(r.Context(), sessionCookie.Value, r.URL)
 
 		// if we don't have a valid session, return an error
 		if err != nil {
@@ -116,8 +119,6 @@ func loginHandler(
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger.Debug("handling request", "url", r.URL.String())
-
 		state := r.URL.Query().Get("state")
 		code := r.URL.Query().Get("code")
 		if state == "" || code == "" {
@@ -149,7 +150,6 @@ func loginHandler(
 
 func healthCheckHandler(c RedisClient, logger *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		//logger.Debug("handling request", "url", r.URL.String())
 		if c != nil {
 			if err := c.Ping(r.Context()).Err(); err != nil {
 				logger.Warn("failed to ping redis", "error", err)

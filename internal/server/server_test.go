@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -12,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/clambin/forward-auth/internal/auth"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
@@ -93,7 +95,7 @@ func (f *fakeForwardAuth) ValidateSession(_ context.Context, sessionID string, _
 	if user, ok := f.sessions[sessionID]; ok {
 		return user, nil
 	}
-	return "", errors.New("invalid session")
+	return "", auth.ErrNoSession
 }
 
 func (f *fakeForwardAuth) DeleteSession(_ context.Context, sessionID string) error {
@@ -109,7 +111,9 @@ func (f *fakeForwardAuth) InitiateLogin(_ context.Context, u string) (string, er
 	if f.states == nil {
 		f.states = make(map[string]string)
 	}
-	state := uuid.NewString()
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	state := hex.EncodeToString(b[:])
 	f.states[state] = u
 
 	vals := url.Values{
