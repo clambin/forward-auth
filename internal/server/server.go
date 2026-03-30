@@ -37,13 +37,15 @@ var DefaultConfiguration = Configuration{
 
 var _ ForwardAuth = (*auth.ForwardAuthServer)(nil)
 
-func New(configuration Configuration, forwardAuth ForwardAuth, redisClient RedisClient, logger *slog.Logger) http.Handler {
+func New(
+	configuration Configuration,
+	forwardAuth ForwardAuth,
+	redisClient RedisClient,
+	metrics Metrics,
+	logger *slog.Logger,
+) http.Handler {
 	mux := http.NewServeMux()
-	route(mux, configuration, forwardAuth, redisClient, logger)
-	return mux
-}
 
-func route(mux *http.ServeMux, configuration Configuration, forwardAuth ForwardAuth, redisClient RedisClient, logger *slog.Logger) {
 	forwardAuthMux := http.NewServeMux()
 	forwardAuthMux.Handle("/", forwardAuthHandler(
 		configuration.CookieName,
@@ -57,14 +59,20 @@ func route(mux *http.ServeMux, configuration Configuration, forwardAuth ForwardA
 		logger.With("handler", "logout"),
 	))
 
-	mux.Handle("/", forwardAuthMiddleware()(forwardAuthMux))
-	mux.Handle("/_oauth", loginHandler(
-		configuration.CookieName,
-		configuration.Domain,
-		forwardAuth,
-		logger.With("handler", "login"),
+	mux.Handle("/", metrics.mw("forwardAuth")(
+		forwardAuthMiddleware()(forwardAuthMux)),
+	)
+	mux.Handle("/_oauth", metrics.mw("login")(
+		loginHandler(
+			configuration.CookieName,
+			configuration.Domain,
+			forwardAuth,
+			logger.With("handler", "login"),
+		),
 	))
 	mux.Handle("/healthz", healthCheckHandler(redisClient, logger.With("handler", "healthCheck")))
+
+	return mux
 }
 
 // forwardAuthMiddleware takes a request from the forwardAuth middleware and restores the original request method and URL.

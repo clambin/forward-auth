@@ -3,7 +3,7 @@ on:
   push:
     branches-ignore:
       - main
-      - build
+      - metrics
 permissions:
   contents: read
 jobs:

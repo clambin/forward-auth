@@ -14,6 +14,7 @@ import (
 	"github.com/clambin/forward-auth/internal/auth"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/server"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
@@ -53,6 +54,9 @@ func main() {
 
 	logger.Info("starting forward-auth", "version", version)
 
+	metrics := server.GetMetrics()
+	prometheus.MustRegister(metrics)
+
 	var g errgroup.Group
 	// Prometheus
 	g.Go(func() error {
@@ -62,7 +66,7 @@ func main() {
 	g.Go(func() error {
 		return httputils.RunServer(ctx, &http.Server{
 			Addr:    cfg.Server.Addr,
-			Handler: server.New(cfg.Server, forwardAuth, redisClient, logger),
+			Handler: server.New(cfg.Server, forwardAuth, redisClient, metrics, logger),
 		})
 	})
 	if err = g.Wait(); err != nil {

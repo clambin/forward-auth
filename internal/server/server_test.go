@@ -20,7 +20,7 @@ import (
 func TestServer(t *testing.T) {
 	var fa fakeForwardAuth
 	var p fakePing
-	s := New(DefaultConfiguration, &fa, &p, slog.New(slog.DiscardHandler))
+	s := New(DefaultConfiguration, &fa, &p, GetMetrics(), slog.New(slog.DiscardHandler))
 
 	// No session: redirect to oidc
 	resp := httptest.NewRecorder()
