@@ -72,7 +72,7 @@ func TestForwardAuth(t *testing.T) {
 	// user has logged in and oidc has sent the confirmation request
 	user, sessionID, u, ttl, err := fa.ConfirmLogin(ctx, state, code)
 	require.NoError(t, err)
-	assert.Equal(t, oidcUser.Email, user)
+	assert.Equal(t, oidcUser.Email, user.Email)
 	assert.NotZero(t, sessionID)
 	assert.Equal(t, "www.example.com", u)
 	assert.Equal(t, config.SessionTTL, ttl)
@@ -80,6 +80,5 @@ func TestForwardAuth(t *testing.T) {
 	// session should now exist
 	user, err = fa.ValidateSession(ctx, sessionID, &url.URL{Host: "www.example.com"})
 	require.NoError(t, err)
-	assert.Equal(t, oidcUser.Email, user)
-
+	assert.Equal(t, oidcUser.Email, user.Email)
 }

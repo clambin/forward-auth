@@ -31,7 +31,7 @@ func forwardAuthHandler(
 		switch {
 		case err == nil:
 			// valid session cookie found: accept the request
-			w.Header().Set("X-Forwarded-User", user)
+			w.Header().Set("X-Forwarded-User", user.Email)
 			w.WriteHeader(http.StatusOK)
 		case errors.Is(err, auth.ErrNoSession):
 			// no session cookie found: redirect to login page

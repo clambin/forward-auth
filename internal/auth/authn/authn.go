@@ -30,7 +30,7 @@ type UserInfo struct {
 
 type Authenticator interface {
 	AuthURL(string) string
-	GetUserInfo(context.Context, string) (*UserInfo, error)
+	GetUserInfo(context.Context, string) (UserInfo, error)
 }
 
 var _ Authenticator = (*oidcAuthenticator)(nil)

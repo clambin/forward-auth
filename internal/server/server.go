@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/clambin/forward-auth/internal/auth"
+	"github.com/clambin/forward-auth/internal/auth/authn"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -16,10 +17,10 @@ type RedisClient interface {
 }
 
 type ForwardAuth interface {
-	ValidateSession(ctx context.Context, sessionID string, url *url.URL) (string, error)
+	ValidateSession(ctx context.Context, sessionID string, url *url.URL) (authn.UserInfo, error)
 	DeleteSession(ctx context.Context, sessionID string) error
 	InitiateLogin(ctx context.Context, url string) (string, error)
-	ConfirmLogin(ctx context.Context, state string, code string) (string, string, string, time.Duration, error)
+	ConfirmLogin(ctx context.Context, state string, code string) (authn.UserInfo, string, string, time.Duration, error)
 }
 
 type Configuration struct {

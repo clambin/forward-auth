@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - main
-      - oidc
+      - redis
 permissions:
   contents: read
   packages: write

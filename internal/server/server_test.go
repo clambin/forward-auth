@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/clambin/forward-auth/internal/auth"
+	"github.com/clambin/forward-auth/internal/auth/authn"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
@@ -84,18 +85,18 @@ func forwardAuthRequest(s string) *http.Request {
 var _ ForwardAuth = (*fakeForwardAuth)(nil)
 
 type fakeForwardAuth struct {
-	sessions map[string]string
+	sessions map[string]authn.UserInfo
 	states   map[string]string
 	mu       sync.Mutex
 }
 
-func (f *fakeForwardAuth) ValidateSession(_ context.Context, sessionID string, _ *url.URL) (string, error) {
+func (f *fakeForwardAuth) ValidateSession(_ context.Context, sessionID string, _ *url.URL) (authn.UserInfo, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if user, ok := f.sessions[sessionID]; ok {
 		return user, nil
 	}
-	return "", auth.ErrNoSession
+	return authn.UserInfo{}, auth.ErrNoSession
 }
 
 func (f *fakeForwardAuth) DeleteSession(_ context.Context, sessionID string) error {
@@ -123,20 +124,21 @@ func (f *fakeForwardAuth) InitiateLogin(_ context.Context, u string) (string, er
 	return "https://oicd.example.com/_oauth?" + vals.Encode(), nil
 }
 
-func (f *fakeForwardAuth) ConfirmLogin(_ context.Context, state string, code string) (string, string, string, time.Duration, error) {
+func (f *fakeForwardAuth) ConfirmLogin(_ context.Context, state string, code string) (authn.UserInfo, string, string, time.Duration, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if code != "1234" {
-		return "", "", "", 0, errors.New("invalid code")
+		return authn.UserInfo{}, "", "", 0, errors.New("invalid code")
 	}
 	if f.states[state] == "" {
-		return "", "", "", 0, errors.New("invalid state")
+		return authn.UserInfo{}, "", "", 0, errors.New("invalid state")
 	}
 	if f.sessions == nil {
-		f.sessions = make(map[string]string)
+		f.sessions = make(map[string]authn.UserInfo)
 	}
-	f.sessions["12345678"] = "foo@example.com"
-	return "foo@example.com", "12345678", f.states[state], time.Hour, nil
+	info := authn.UserInfo{Email: "foo@example.com"}
+	f.sessions["12345678"] = info
+	return info, "12345678", f.states[state], time.Hour, nil
 }
 
 var _ RedisClient = (*fakePing)(nil)

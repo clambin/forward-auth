@@ -38,20 +38,20 @@ func (o *oidcAuthenticator) AuthURL(state string) string {
 }
 
 // GetUserInfo completes the OIDC authentication flow and, if successful, returns the user info.
-func (o *oidcAuthenticator) GetUserInfo(ctx context.Context, code string) (*UserInfo, error) {
+func (o *oidcAuthenticator) GetUserInfo(ctx context.Context, code string) (UserInfo, error) {
 	token, err := o.config.Exchange(ctx, code)
 	if err != nil {
-		return nil, fmt.Errorf("exchange code: %w", err)
+		return UserInfo{}, fmt.Errorf("exchange code: %w", err)
 	}
 
 	userInfo, err := o.provider.UserInfo(ctx, oauth2.StaticTokenSource(token))
 	if err != nil {
-		return nil, fmt.Errorf("get user info: %w", err)
+		return UserInfo{}, fmt.Errorf("get user info: %w", err)
 	}
 
 	var info UserInfo
 	if err = userInfo.Claims(&info); err != nil {
-		return nil, fmt.Errorf("parse claims: %w", err)
+		return UserInfo{}, fmt.Errorf("parse claims: %w", err)
 	}
-	return &info, nil
+	return info, nil
 }

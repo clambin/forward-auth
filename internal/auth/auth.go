@@ -24,7 +24,7 @@ type authorizer interface {
 }
 
 type ForwardAuthServer struct {
-	sessionStore  cache.Cache[string]
+	sessionStore  cache.Cache[authn.UserInfo]
 	states        states
 	authenticator authn.Authenticator
 	authorizer    authorizer
@@ -33,7 +33,7 @@ type ForwardAuthServer struct {
 func New(ctx context.Context, configuration Configuration) (*ForwardAuthServer, error) {
 	var err error
 	var s ForwardAuthServer
-	s.sessionStore, err = cache.New[string](configuration.SessionTTL, "forward-auth-session", configuration.Storage)
+	s.sessionStore, err = cache.New[authn.UserInfo](configuration.SessionTTL, "forward-auth-session", configuration.Storage)
 	if err != nil {
 		return nil, fmt.Errorf("session store: %w", err)
 	}
@@ -52,18 +52,18 @@ func New(ctx context.Context, configuration Configuration) (*ForwardAuthServer, 
 	return &s, nil
 }
 
-func (s *ForwardAuthServer) ValidateSession(ctx context.Context, sessionID string, url *url.URL) (string, error) {
+func (s *ForwardAuthServer) ValidateSession(ctx context.Context, sessionID string, url *url.URL) (authn.UserInfo, error) {
 	// authenticate the user: see if we have a session in our store
 	user, err := s.sessionStore.Get(ctx, sessionID)
 	if errors.Is(err, cache.ErrNotFound) {
-		return "", ErrNoSession
+		return authn.UserInfo{}, ErrNoSession
 	}
 	if err != nil {
-		return "", fmt.Errorf("session: %w", err)
+		return authn.UserInfo{}, fmt.Errorf("session: %w", err)
 	}
 	// check if the user is allowed to access the resource
-	if !s.authorizer.Allow(url, user) {
-		return "", ErrNotAuthorized
+	if !s.authorizer.Allow(url, user.Email) {
+		return authn.UserInfo{}, ErrNotAuthorized
 	}
 	return user, nil
 }
@@ -83,23 +83,23 @@ func (s *ForwardAuthServer) InitiateLogin(ctx context.Context, url string) (stri
 	return s.authenticator.AuthURL(state), nil
 }
 
-func (s *ForwardAuthServer) ConfirmLogin(ctx context.Context, state string, code string) (string, string, string, time.Duration, error) {
+func (s *ForwardAuthServer) ConfirmLogin(ctx context.Context, state string, code string) (authn.UserInfo, string, string, time.Duration, error) {
 	// retrieve the state from the state cache
 	u, err := s.states.Validate(ctx, state)
 	if err != nil {
-		return "", "", "", 0, fmt.Errorf("state: %w", err)
+		return authn.UserInfo{}, "", "", 0, fmt.Errorf("state: %w", err)
 	}
 	// use the code to get the user info
 	userInfo, err := s.authenticator.GetUserInfo(ctx, code)
 	if err != nil {
-		return "", "", "", 0, fmt.Errorf("confirm login: %w", err)
+		return authn.UserInfo{}, "", "", 0, fmt.Errorf("confirm login: %w", err)
 	}
 	// create a session in the session cache
 	sessionID := makeRandomID()
-	if err = s.sessionStore.Set(ctx, sessionID, userInfo.Email); err != nil {
-		return "", "", "", 0, fmt.Errorf("create session: %w", err)
+	if err = s.sessionStore.Set(ctx, sessionID, userInfo); err != nil {
+		return authn.UserInfo{}, "", "", 0, fmt.Errorf("create session: %w", err)
 	}
-	return userInfo.Email, sessionID, u, s.sessionStore.TTL(), nil
+	return userInfo, sessionID, u, s.sessionStore.TTL(), nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
