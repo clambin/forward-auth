@@ -14,10 +14,10 @@ import (
 	"github.com/clambin/forward-auth/internal/auth"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/server"
+	"github.com/goccy/go-yaml"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
-	"gopkg.in/yaml.v3"
 )
 
 var (

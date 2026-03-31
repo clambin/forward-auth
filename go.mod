@@ -3,9 +3,10 @@ module github.com/clambin/forward-auth
 go 1.26
 
 require (
-	codeberg.org/clambin/go-common/cache v0.9.0
+	codeberg.org/clambin/go-common/cache v0.10.0
 	codeberg.org/clambin/go-common/httputils v0.4.1
 	github.com/coreos/go-oidc/v3 v3.17.0
+	github.com/goccy/go-yaml v1.19.2
 	github.com/oauth2-proxy/mockoidc v0.0.0-20240214162133-caebfff84d25
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.18.0
@@ -13,7 +14,6 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/redis v0.41.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.20.0
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -83,4 +83,5 @@ require (
 	golang.org/x/sys v0.41.0 // indirect
 	google.golang.org/grpc v1.79.3 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
