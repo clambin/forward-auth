@@ -9,7 +9,7 @@ import (
 )
 
 func TestAuthorizer(t *testing.T) {
-	a, _ := New(Configuration{Rules: []Rule{
+	a, _ := New([]Rule{
 		{
 			Domain: "*.example.com",
 			Users:  []string{"foo@example.com", "bar@example.com"},
@@ -18,7 +18,7 @@ func TestAuthorizer(t *testing.T) {
 			Domain: "www.example.org",
 			Users:  []string{"foo@example.org", "bar@example.org"},
 		},
-	}})
+	})
 	tests := []struct {
 		name string
 		url  *url.URL
@@ -53,7 +53,7 @@ func BenchmarkAuthorizer(b *testing.B) {
 		rules = append(rules, Rule{Domain: fmt.Sprintf("*.%d.example.com", i), Users: users})
 		rules = append(rules, Rule{Domain: fmt.Sprintf("www.%d.example.com", i), Users: users})
 	}
-	a, _ := New(Configuration{Rules: rules})
+	a, _ := New(rules)
 
 	u := &url.URL{Host: fmt.Sprintf("foo.%d.example.com", n-1)}
 	user := fmt.Sprintf("foo-%d@example.com", n-1)

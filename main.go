@@ -11,7 +11,8 @@ import (
 	"syscall"
 
 	"codeberg.org/clambin/go-common/httputils"
-	"github.com/clambin/forward-auth/internal/auth"
+	"github.com/clambin/forward-auth/internal/authn"
+	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/server"
 	"github.com/goccy/go-yaml"
@@ -31,24 +32,30 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	logger := cfg.Logger.Logger()
+	logger := cfg.Logger.Logger(os.Stderr)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	forwardAuth, err := auth.New(ctx, cfg.ForwardAuth)
+	authenticator, err := authn.New(ctx, cfg.Authn)
 	if err != nil {
-		logger.Error("failed to create forward-auth", "err", err)
+		logger.Error("failed to create authenticator", "err", err)
+		os.Exit(1)
+	}
+
+	authorizer, err := authz.New(cfg.Authz.Rules)
+	if err != nil {
+		logger.Error("failed to create authorizer", "err", err)
 		os.Exit(1)
 	}
 
 	var redisClient server.RedisClient
-	if cfg.ForwardAuth.Storage.Type == "redis" {
+	if cfg.Authn.Storage.Type == "redis" {
 		redisClient = redis.NewClient(&redis.Options{
-			Addr:     cfg.ForwardAuth.Storage.Redis.Addr,
-			Username: cfg.ForwardAuth.Storage.Redis.Username,
-			Password: cfg.ForwardAuth.Storage.Redis.Password,
-			DB:       cfg.ForwardAuth.Storage.Redis.DB,
+			Addr:     cfg.Authn.Storage.Redis.Addr,
+			Username: cfg.Authn.Storage.Redis.Username,
+			Password: cfg.Authn.Storage.Redis.Password,
+			DB:       cfg.Authn.Storage.Redis.DB,
 		})
 	}
 
@@ -66,7 +73,7 @@ func main() {
 	g.Go(func() error {
 		return httputils.RunServer(ctx, &http.Server{
 			Addr:    cfg.Server.Addr,
-			Handler: server.New(cfg.Server, forwardAuth, redisClient, metrics, logger),
+			Handler: server.New(cfg.Server, authenticator, authorizer, redisClient, metrics, logger),
 		})
 	})
 	if err = g.Wait(); err != nil {
@@ -78,7 +85,7 @@ func getConfiguration() (configuration.Configuration, error) {
 	cfg := configuration.DefaultConfiguration
 	b, err := os.ReadFile(*config)
 	if errors.Is(err, os.ErrNotExist) {
-		cfg.Logger.Logger().Warn("no config file found, using default configuration")
+		cfg.Logger.Logger(os.Stderr).Warn("no config file found, using default configuration")
 		return cfg, nil
 	}
 	if err != nil {

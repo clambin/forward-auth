@@ -6,7 +6,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/clambin/forward-auth/internal/auth"
+	"github.com/clambin/forward-auth/internal/authn/cache"
+)
+
+const (
+	xForwardedUser = "X-Forwarded-User"
 )
 
 // forwardAuthHandler is the main handler for the forward-auth middleware.
@@ -15,46 +19,56 @@ import (
 // If the session is valid, the user is authorized and the request is forwarded to the original destination.
 func forwardAuthHandler(
 	cookieName string,
-	forwardAuth ForwardAuth,
+	authenticator Authenticator,
+	authorizer Authorizer,
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		l := logger.With(slog.String("url", r.URL.String()))
+
 		// get the session cookie
 		sessionCookie, err := r.Cookie(cookieName)
 		if err != nil {
-			redirectToLoginPage(w, r, forwardAuth, logger)
+			l.Warn("rejecting request: no session cookie found", slog.Any("err", err))
+			redirectToLoginPage(w, r, authenticator, logger)
 			return
 		}
 
 		// authenticate the user: check if the cookie is in our Sessions Store
-		user, err := forwardAuth.ValidateSession(r.Context(), sessionCookie.Value, r.URL)
-		switch {
-		case err == nil:
-			// valid session cookie found: accept the request
-			w.Header().Set("X-Forwarded-User", user.Email)
-			w.WriteHeader(http.StatusOK)
-		case errors.Is(err, auth.ErrNoSession):
-			// no session cookie found: redirect to login page
-			redirectToLoginPage(w, r, forwardAuth, logger)
-		case errors.Is(err, auth.ErrNotAuthorized):
-			// user is not authorized: reject the request
-			logger.Warn("rejecting request: user is not authorized", "err", err)
-			http.Error(w, "user is not authorized", http.StatusForbidden)
-		default:
-			logger.Warn("rejecting request: failed to validate session", "err", err)
-			http.Error(w, "failed to validate session", http.StatusInternalServerError)
+		session, err := authenticator.Validate(r.Context(), sessionCookie.Value)
+
+		// no valid session cookie found: redirect to login page
+		if errors.Is(err, cache.ErrNotFound) {
+			l.Warn("rejecting request: no valid session found", slog.Any("err", err))
+			redirectToLoginPage(w, r, authenticator, logger)
+			return
 		}
+
+		if err != nil {
+			logger.Warn("rejecting request: failed to validate session", slog.Any("err", err))
+			http.Error(w, "failed to validate session", http.StatusInternalServerError)
+			return
+		}
+
+		if !authorizer.Allow(r.URL, session.UserInfo.Email) {
+			logger.Warn("rejecting request: user is not authorized to access the requested resource")
+			http.Error(w, "user is not authorized to access the requested resource", http.StatusForbidden)
+			return
+		}
+
+		// valid session cookie found, request authorized: accept the request
+		w.Header().Set(xForwardedUser, session.UserInfo.Email)
+		w.WriteHeader(http.StatusOK)
 	})
 }
 
-func redirectToLoginPage(w http.ResponseWriter, r *http.Request, forwardAuth ForwardAuth, logger *slog.Logger) {
-	redirectURL, err := forwardAuth.InitiateLogin(r.Context(), r.URL.String())
+func redirectToLoginPage(w http.ResponseWriter, r *http.Request, authenticator Authenticator, logger *slog.Logger) {
+	redirectURL, err := authenticator.InitiateLogin(r.Context(), r.URL.String())
 	if err != nil {
-		logger.Warn("rejecting request: failed to redirect to login page", "err", err)
+		logger.Warn("rejecting request: failed to redirect to login page", slog.Any("err", err))
 		http.Error(w, "failed to redirect to login page", http.StatusInternalServerError)
 		return
 	}
-	logger.Warn("rejecting request: no valid session cookie found", "err", err)
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 
@@ -63,19 +77,19 @@ func redirectToLoginPage(w http.ResponseWriter, r *http.Request, forwardAuth For
 func logoutHandler(
 	cookieName string,
 	domain string,
-	forwardAuth ForwardAuth,
+	authenticator Authenticator,
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// get the session cookie
 		sessionCookie, err := r.Cookie(cookieName)
 		if err != nil {
-			redirectToLoginPage(w, r, forwardAuth, logger)
+			redirectToLoginPage(w, r, authenticator, logger)
 			return
 		}
 
 		// authenticate the user: check if the cookie is in our Sessions Store
-		user, err := forwardAuth.ValidateSession(r.Context(), sessionCookie.Value, r.URL)
+		user, err := authenticator.Validate(r.Context(), sessionCookie.Value)
 
 		// if we don't have a valid session, return an error
 		if err != nil {
@@ -85,7 +99,7 @@ func logoutHandler(
 		}
 
 		// remove the session
-		if err = forwardAuth.DeleteSession(r.Context(), sessionCookie.Value); err != nil {
+		if err = authenticator.Close(r.Context(), sessionCookie.Value); err != nil {
 			logger.Warn("rejecting logout request: failed to delete session", "err", err)
 			http.Error(w, "failed to delete session", http.StatusInternalServerError)
 			return
@@ -115,7 +129,7 @@ func logoutHandler(
 func loginHandler(
 	cookieName string,
 	domain string,
-	forwardAuth ForwardAuth,
+	authenticator Authenticator,
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -127,7 +141,7 @@ func loginHandler(
 			return
 		}
 
-		user, sessionID, redirectURL, ttl, err := forwardAuth.ConfirmLogin(r.Context(), state, code)
+		session, sessionID, redirectURL, ttl, err := authenticator.ConfirmLogin(r.Context(), state, code)
 		if err != nil {
 			logger.Warn("rejecting login request: failed to validate login", "err", err)
 			http.Error(w, "failed to validate login", http.StatusUnauthorized)
@@ -143,8 +157,7 @@ func loginHandler(
 			HttpOnly: true,
 		})
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
-
-		logger.Info("login successful", "user", user)
+		logger.Info("login successful", "user", session.UserInfo.Email)
 	})
 }
 

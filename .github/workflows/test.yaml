@@ -3,7 +3,7 @@ on:
   push:
     branches-ignore:
       - main
-      - redis
+      - refactor
 permissions:
   contents: read
 jobs:

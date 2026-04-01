@@ -14,16 +14,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clambin/forward-auth/internal/auth"
-	"github.com/clambin/forward-auth/internal/auth/authn"
+	"github.com/clambin/forward-auth/internal/authn"
+	"github.com/clambin/forward-auth/internal/authn/cache"
+	"github.com/clambin/forward-auth/internal/authn/provider"
+	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
 
 func TestServer(t *testing.T) {
-	var fa fakeForwardAuth
+	var fa fakeAuthenticator
 	var p fakePing
-	s := New(DefaultConfiguration, &fa, &p, GetMetrics(), slog.New(slog.DiscardHandler))
+	s := New(configuration.DefaultConfiguration.Server, &fa, &fakeAuthorizer{}, &p, GetMetrics(), slog.New(slog.DiscardHandler))
 
 	// No session: redirect to oidc
 	resp := httptest.NewRecorder()
@@ -82,31 +84,31 @@ func forwardAuthRequest(s string) *http.Request {
 	return req
 }
 
-var _ ForwardAuth = (*fakeForwardAuth)(nil)
+var _ Authenticator = (*fakeAuthenticator)(nil)
 
-type fakeForwardAuth struct {
-	sessions map[string]authn.UserInfo
+type fakeAuthenticator struct {
+	sessions map[string]authn.Session
 	states   map[string]string
 	mu       sync.Mutex
 }
 
-func (f *fakeForwardAuth) ValidateSession(_ context.Context, sessionID string, _ *url.URL) (authn.UserInfo, error) {
+func (f *fakeAuthenticator) Validate(_ context.Context, sessionID string) (*authn.Session, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if user, ok := f.sessions[sessionID]; ok {
-		return user, nil
+	if session, ok := f.sessions[sessionID]; ok {
+		return &session, nil
 	}
-	return authn.UserInfo{}, auth.ErrNoSession
+	return nil, cache.ErrNotFound
 }
 
-func (f *fakeForwardAuth) DeleteSession(_ context.Context, sessionID string) error {
+func (f *fakeAuthenticator) Close(_ context.Context, sessionID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.sessions, sessionID)
 	return nil
 }
 
-func (f *fakeForwardAuth) InitiateLogin(_ context.Context, u string) (string, error) {
+func (f *fakeAuthenticator) InitiateLogin(_ context.Context, u string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.states == nil {
@@ -124,21 +126,32 @@ func (f *fakeForwardAuth) InitiateLogin(_ context.Context, u string) (string, er
 	return "https://oicd.example.com/_oauth?" + vals.Encode(), nil
 }
 
-func (f *fakeForwardAuth) ConfirmLogin(_ context.Context, state string, code string) (authn.UserInfo, string, string, time.Duration, error) {
+func (f *fakeAuthenticator) ConfirmLogin(_ context.Context, state string, code string) (*authn.Session, string, string, time.Duration, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if code != "1234" {
-		return authn.UserInfo{}, "", "", 0, errors.New("invalid code")
+		return nil, "", "", 0, errors.New("invalid code")
 	}
 	if f.states[state] == "" {
-		return authn.UserInfo{}, "", "", 0, errors.New("invalid state")
+		return nil, "", "", 0, errors.New("invalid state")
 	}
 	if f.sessions == nil {
-		f.sessions = make(map[string]authn.UserInfo)
+		f.sessions = make(map[string]authn.Session)
 	}
-	info := authn.UserInfo{Email: "foo@example.com"}
-	f.sessions["12345678"] = info
-	return info, "12345678", f.states[state], time.Hour, nil
+	session := authn.Session{
+		UserInfo: provider.UserInfo{Email: "foo@example.com"},
+		LastSeen: time.Now(),
+	}
+	f.sessions["12345678"] = session
+	return &session, "12345678", f.states[state], time.Hour, nil
+}
+
+var _ Authorizer = (*fakeAuthorizer)(nil)
+
+type fakeAuthorizer struct{}
+
+func (f *fakeAuthorizer) Allow(_ *url.URL, _ string) bool {
+	return true
 }
 
 var _ RedisClient = (*fakePing)(nil)

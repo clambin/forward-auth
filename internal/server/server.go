@@ -7,8 +7,9 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/clambin/forward-auth/internal/auth"
-	"github.com/clambin/forward-auth/internal/auth/authn"
+	"github.com/clambin/forward-auth/internal/authn"
+	"github.com/clambin/forward-auth/internal/authz"
+	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -16,29 +17,25 @@ type RedisClient interface {
 	Ping(ctx context.Context) *redis.StatusCmd
 }
 
-type ForwardAuth interface {
-	ValidateSession(ctx context.Context, sessionID string, url *url.URL) (authn.UserInfo, error)
-	DeleteSession(ctx context.Context, sessionID string) error
+type Authenticator interface {
+	Validate(ctx context.Context, sessionID string) (*authn.Session, error)
+	Close(ctx context.Context, sessionID string) error
 	InitiateLogin(ctx context.Context, url string) (string, error)
-	ConfirmLogin(ctx context.Context, state string, code string) (authn.UserInfo, string, string, time.Duration, error)
+	ConfirmLogin(ctx context.Context, state string, code string) (*authn.Session, string, string, time.Duration, error)
 }
 
-type Configuration struct {
-	Addr       string `yaml:"addr"`
-	CookieName string `yaml:"cookieName"`
-	Domain     string `yaml:"domain"`
+var _ Authenticator = (*authn.Authenticator)(nil)
+
+type Authorizer interface {
+	Allow(url *url.URL, user string) bool
 }
 
-var DefaultConfiguration = Configuration{
-	Addr:       ":8080",
-	CookieName: "forward-auth-session",
-}
-
-var _ ForwardAuth = (*auth.ForwardAuthServer)(nil)
+var _ Authorizer = (*authz.Authorizer)(nil)
 
 func New(
-	configuration Configuration,
-	forwardAuth ForwardAuth,
+	configuration configuration.ServerConfiguration,
+	authenticator Authenticator,
+	authorizer Authorizer,
 	redisClient RedisClient,
 	metrics Metrics,
 	logger *slog.Logger,
@@ -48,13 +45,14 @@ func New(
 	forwardAuthMux := http.NewServeMux()
 	forwardAuthMux.Handle("/", forwardAuthHandler(
 		configuration.CookieName,
-		forwardAuth,
+		authenticator,
+		authorizer,
 		logger.With(slog.String("handler", "forwardAuth")),
 	))
 	forwardAuthMux.Handle("/_oauth/logout", logoutHandler(
 		configuration.CookieName,
 		configuration.Domain,
-		forwardAuth,
+		authenticator,
 		logger.With(slog.String("handler", "logout")),
 	))
 
@@ -68,7 +66,7 @@ func New(
 			loginHandler(
 				configuration.CookieName,
 				configuration.Domain,
-				forwardAuth,
+				authenticator,
 				logger.With("handler", "login"),
 			),
 		),

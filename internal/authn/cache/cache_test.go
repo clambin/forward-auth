@@ -31,7 +31,7 @@ func TestBackEnd(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			const ttl = time.Second
-			c, err := New[string](ttl, "", tt.cfg)
+			c, err := New[string](ttl, "prefix", tt.cfg)
 			tt.err(t, err)
 
 			if err != nil {
@@ -42,6 +42,12 @@ func TestBackEnd(t *testing.T) {
 
 			// add a value
 			require.NoError(t, c.Set(ctx, "foo", "bar"))
+			// list values
+			items, err := c.List(ctx)
+			require.NoError(t, err)
+			require.Len(t, items, 1)
+			require.Equal(t, "bar", items["foo"])
+
 			// delete the value
 			require.NoError(t, c.Delete(ctx, "foo"))
 			// add the value again
@@ -51,6 +57,16 @@ func TestBackEnd(t *testing.T) {
 				_, err = c.Get(ctx, "foo")
 				return errors.Is(err, ErrNotFound)
 			}, 2*ttl, time.Millisecond)
+			// add the value again
+			require.NoError(t, c.Set(ctx, "foo", "bar"))
+			// update the value
+			time.Sleep(ttl / 2) // this is a bit flaky. may regret this later
+			require.NoError(t, c.Update(ctx, "foo", "baz"))
+			// wait for the value to expire
+			require.Eventually(t, func() bool {
+				_, err = c.Get(ctx, "foo")
+				return errors.Is(err, ErrNotFound)
+			}, ttl, time.Millisecond)
 		})
 	}
 }

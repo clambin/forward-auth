@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"codeberg.org/clambin/go-common/cache"
@@ -20,6 +21,8 @@ type Cache[T any] interface {
 	Get(ctx context.Context, id string) (T, error)
 	Delete(ctx context.Context, id string) error
 	TTL() time.Duration
+	Update(ctx context.Context, id string, val T) error
+	List(ctx context.Context) (map[string]T, error)
 }
 
 var (
@@ -49,7 +52,7 @@ func New[T any](ttl time.Duration, prefix string, configuration Configuration) (
 	case "redis":
 		c = &redisCache[T]{
 			ttl:    ttl,
-			prefix: prefix,
+			prefix: prefix + ":",
 			client: redis.NewClient(&redis.Options{
 				Addr:     configuration.Redis.Addr,
 				Username: configuration.Redis.Username,
@@ -72,6 +75,11 @@ func (c *localCache[T]) Set(_ context.Context, id string, val T) error {
 	return nil
 }
 
+func (c *localCache[T]) Update(_ context.Context, id string, val T) error {
+	c.cache.Update(id, val)
+	return nil
+}
+
 func (c *localCache[T]) Get(_ context.Context, id string) (T, error) {
 	if value, ok := c.cache.Get(id); ok {
 		return value, nil
@@ -89,6 +97,18 @@ func (c *localCache[T]) TTL() time.Duration {
 	return c.cache.GetDefaultExpiration()
 }
 
+func (c *localCache[T]) List(_ context.Context) (map[string]T, error) {
+	keys := c.cache.Keys()
+	items := make(map[string]T, len(keys))
+	for _, key := range keys {
+		v, ok := c.cache.Get(key)
+		if ok {
+			items[key] = v
+		}
+	}
+	return items, nil
+}
+
 type redisCache[T any] struct {
 	client *redis.Client
 	prefix string
@@ -101,6 +121,14 @@ func (c *redisCache[T]) Set(ctx context.Context, id string, val T) error {
 		return err
 	}
 	return c.client.Set(ctx, c.prefixedID(id), string(body), c.ttl).Err()
+}
+
+func (c *redisCache[T]) Update(ctx context.Context, id string, val T) error {
+	body, err := json.Marshal(val)
+	if err != nil {
+		return err
+	}
+	return c.client.SetArgs(ctx, c.prefixedID(id), string(body), redis.SetArgs{KeepTTL: true}).Err()
 }
 
 func (c *redisCache[T]) Get(ctx context.Context, id string) (T, error) {
@@ -121,9 +149,32 @@ func (c *redisCache[T]) TTL() time.Duration {
 	return c.ttl
 }
 
-func (c *redisCache[T]) prefixedID(id string) string {
-	if c.prefix == "" {
-		return id
+func (c *redisCache[T]) List(ctx context.Context) (map[string]T, error) {
+	pattern := c.prefixedID("*")
+	keys, err := c.client.Keys(ctx, pattern).Result()
+	if err != nil {
+		return nil, err
 	}
-	return c.prefix + ":" + id
+	items := make(map[string]T, len(keys))
+	for _, key := range keys {
+		id := c.unprefixedKey(key)
+		if v, err := c.Get(ctx, id); err == nil {
+			items[id] = v
+		}
+	}
+	return items, nil
+}
+
+func (c *redisCache[T]) prefixedID(id string) string {
+	if c.prefix != "" {
+		id = c.prefix + id
+	}
+	return id
+}
+
+func (c *redisCache[T]) unprefixedKey(key string) string {
+	if c.prefix != "" {
+		key = strings.TrimPrefix(key, c.prefix)
+	}
+	return key
 }

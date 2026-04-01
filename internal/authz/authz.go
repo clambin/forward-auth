@@ -30,22 +30,18 @@ func (r Rule) matchUser(user string) bool {
 	return false
 }
 
-type Configuration struct {
-	Rules []Rule `yaml:"rules"`
-}
-
 type Authorizer struct {
 	Rules []Rule
 }
 
-func New(configuration Configuration) (Authorizer, error) {
-	for i := range configuration.Rules {
-		configuration.Rules[i].Domain = strings.ToLower(configuration.Rules[i].Domain)
-		for j := range configuration.Rules[i].Users {
-			configuration.Rules[i].Users[j] = strings.ToLower(configuration.Rules[i].Users[j])
+func New(rules []Rule) (Authorizer, error) {
+	for i := range rules {
+		rules[i].Domain = strings.ToLower(rules[i].Domain)
+		for j := range rules[i].Users {
+			rules[i].Users[j] = strings.ToLower(rules[i].Users[j])
 		}
 	}
-	return Authorizer(configuration), nil
+	return Authorizer{Rules: rules}, nil
 }
 
 func (a Authorizer) Allow(u *url.URL, user string) bool {

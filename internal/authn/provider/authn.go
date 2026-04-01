@@ -1,4 +1,4 @@
-package authn
+package provider
 
 import (
 	"context"
@@ -21,21 +21,21 @@ type OIDCConfiguration struct {
 
 type UserInfo struct {
 	Email         string `json:"email"`
-	EmailVerified bool   `json:"email_verified"`
 	Name          string `json:"name"`
 	GivenName     string `json:"given_name"`
 	FamilyName    string `json:"family_name"`
 	Picture       string `json:"picture"`
+	EmailVerified bool   `json:"email_verified"`
 }
 
-type Authenticator interface {
+type Provider interface {
 	AuthURL(string) string
 	GetUserInfo(context.Context, string) (UserInfo, error)
 }
 
-var _ Authenticator = (*oidcAuthenticator)(nil)
+var _ Provider = (*oidcAuthenticator)(nil)
 
-func New(ctx context.Context, configuration Configuration) (Authenticator, error) {
+func New(ctx context.Context, configuration Configuration) (Provider, error) {
 	switch configuration.Type {
 	case "google":
 		configuration.Type = "oidc"
@@ -48,6 +48,6 @@ func New(ctx context.Context, configuration Configuration) (Authenticator, error
 		}
 		return a, nil
 	default:
-		return nil, fmt.Errorf("unsupported authn type: %s", configuration.Type)
+		return nil, fmt.Errorf("unsupported provider type: %s", configuration.Type)
 	}
 }

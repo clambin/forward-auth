@@ -4,21 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
+	"time"
 
 	"codeberg.org/clambin/go-common/httputils"
-	"github.com/clambin/forward-auth/internal/auth"
-	"github.com/clambin/forward-auth/internal/server"
+	"github.com/clambin/forward-auth/internal/authn/cache"
+	"github.com/clambin/forward-auth/internal/authn/provider"
+	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var DefaultConfiguration = Configuration{
-	Server:      server.DefaultConfiguration,
-	ForwardAuth: auth.DefaultConfiguration,
+	Server: ServerConfiguration{
+		Addr:       ":8080",
+		CookieName: "forward-auth-session",
+	},
 	Logger: LoggerConfiguration{
 		Level:  "info",
 		Format: "json",
@@ -27,13 +31,37 @@ var DefaultConfiguration = Configuration{
 		Addr: ":9120",
 		Path: "/metrics",
 	},
+	Authn: AuthnConfiguration{
+		SessionTTL: 24 * time.Hour,
+		StateTTL:   10 * time.Minute,
+		Storage:    cache.Configuration{Type: "local"},
+		Provider:   provider.Configuration{Type: "google"},
+	},
 }
 
 type Configuration struct {
-	Server      server.Configuration    `yaml:"server"`
-	Logger      LoggerConfiguration     `yaml:"logger"`
-	Prometheus  PrometheusConfiguration `yaml:"prometheus"`
-	ForwardAuth auth.Configuration      `yaml:"forwardAuth"`
+	Server     ServerConfiguration     `yaml:"server"`
+	Logger     LoggerConfiguration     `yaml:"logger"`
+	Prometheus PrometheusConfiguration `yaml:"prometheus"`
+	Authz      AuthzConfiguration      `yaml:"authz"`
+	Authn      AuthnConfiguration      `yaml:"authn"`
+}
+
+type AuthnConfiguration struct {
+	Provider   provider.Configuration `yaml:"provider"`
+	Storage    cache.Configuration    `yaml:"storage"`
+	SessionTTL time.Duration          `yaml:"session_ttl"`
+	StateTTL   time.Duration          `yaml:"state_ttl"`
+}
+
+type AuthzConfiguration struct {
+	Rules []authz.Rule `yaml:"rules"`
+}
+
+type ServerConfiguration struct {
+	Addr       string `yaml:"addr"`
+	CookieName string `yaml:"cookieName"`
+	Domain     string `yaml:"domain"`
 }
 
 type LoggerConfiguration struct {
@@ -41,7 +69,7 @@ type LoggerConfiguration struct {
 	Format string `yaml:"format"`
 }
 
-func (c LoggerConfiguration) Logger() *slog.Logger {
+func (c LoggerConfiguration) Logger(w io.Writer) *slog.Logger {
 	var level slog.Level
 	err := level.UnmarshalText([]byte(c.Level))
 	if err != nil {
@@ -50,13 +78,14 @@ func (c LoggerConfiguration) Logger() *slog.Logger {
 	}
 
 	var logger *slog.Logger
+	opts := slog.HandlerOptions{Level: level}
 	switch strings.ToLower(c.Format) {
 	case "text":
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+		logger = slog.New(slog.NewTextHandler(w, &opts))
 	case "json":
-		logger = slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+		logger = slog.New(slog.NewJSONHandler(w, &opts))
 	default:
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+		logger = slog.New(slog.NewTextHandler(w, &opts))
 		err = errors.Join(err, fmt.Errorf("invalid log format: %s. using text", c.Format))
 	}
 
