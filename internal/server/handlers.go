@@ -146,6 +146,7 @@ func loginHandler(
 		if err != nil {
 			logger.Warn("rejecting login request: failed to validate login", "err", err)
 			http.Error(w, "failed to validate login", http.StatusUnauthorized)
+			return
 		}
 
 		http.SetCookie(w, &http.Cookie{
