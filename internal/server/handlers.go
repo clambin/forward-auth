@@ -114,6 +114,7 @@ func logoutHandler(
 			Expires:  time.Now().Add(-time.Hour),
 			Secure:   true,
 			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
 		})
 
 		logger.Info("logout successful", "user", user)
@@ -155,6 +156,7 @@ func loginHandler(
 			Expires:  time.Now().Add(ttl),
 			Secure:   true,
 			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
 		})
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 		logger.Info("login successful", "user", session.UserInfo.Email)
