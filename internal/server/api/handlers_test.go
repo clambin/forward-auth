@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -38,7 +39,7 @@ func TestListSessionsHandler(t *testing.T) {
 				},
 			}
 			const cookieName = "session"
-			h := Handler(cookieName, &auth)
+			h := Handler(cookieName, &auth, slog.New(slog.DiscardHandler))
 
 			req := httptest.NewRequest(http.MethodGet, tt.target, nil)
 			req.AddCookie(&http.Cookie{Name: cookieName, Value: tt.sessionID})
@@ -77,7 +78,7 @@ func TestGetSessionHandler(t *testing.T) {
 				},
 			}
 			const cookieName = "session"
-			h := Handler(cookieName, &auth)
+			h := Handler(cookieName, &auth, slog.New(slog.DiscardHandler))
 
 			req := httptest.NewRequest(http.MethodGet, tt.target, nil)
 			req.AddCookie(&http.Cookie{Name: cookieName, Value: "1234"})
@@ -108,7 +109,7 @@ func TestDeleteSessionHandler(t *testing.T) {
 				},
 			}
 			const cookieName = "session"
-			h := Handler(cookieName, &auth)
+			h := Handler(cookieName, &auth, slog.New(slog.DiscardHandler))
 
 			req := httptest.NewRequest(http.MethodDelete, tt.target, nil)
 			req.AddCookie(&http.Cookie{Name: cookieName, Value: "1234"})
