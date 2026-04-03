@@ -44,7 +44,9 @@ func sessionsHandler(authenticator Authenticator, logger *slog.Logger) http.Hand
 		logger.Debug("got user sessions", slog.Any("sessions", userSessions))
 
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(userSessions)
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(userSessions)
 	})
 }
 
@@ -68,7 +70,9 @@ func getSessionHandler(authenticator Authenticator) http.Handler {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(session)
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(session)
 	})
 }
 
