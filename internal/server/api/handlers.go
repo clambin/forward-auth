@@ -50,8 +50,6 @@ func sessionsHandler(authenticator Authenticator, logger *slog.Logger) http.Hand
 
 func getSessionHandler(authenticator Authenticator) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// session validation runs in struct mode, so this is only called if the session is valid
-		validationResult, _ := middleware.SessionFromCtx(r.Context())
 		sessionID := r.PathValue("id")
 		session, err := authenticator.GetSession(r.Context(), sessionID)
 		if errors.Is(err, cache.ErrNotFound) {
@@ -62,6 +60,8 @@ func getSessionHandler(authenticator Authenticator) http.Handler {
 			http.Error(w, "failed to get session", http.StatusInternalServerError)
 			return
 		}
+		// session validation runs in struct mode, so this is only called if the session is valid
+		validationResult, _ := middleware.SessionFromCtx(r.Context())
 		if session.UserInfo.Email != validationResult.Session.UserInfo.Email {
 			http.Error(w, "session does not belong to the user", http.StatusForbidden)
 			return

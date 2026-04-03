@@ -59,7 +59,7 @@ func New(
 		),
 	))
 
-	mux.Handle("/api/v1", http.StripPrefix("/api/v1", api.Handler(
+	mux.Handle("/api/v1/", http.StripPrefix("/api/v1", api.Handler(
 		configuration.CookieName,
 		authenticator,
 		logger.With("handler", "api"),
