@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/clambin/forward-auth/internal/authn/cache"
@@ -107,10 +108,34 @@ func (m *Authenticator) ConfirmLogin(ctx context.Context, state string, code str
 	return &session, sessionID, u, m.sessions.TTL(), nil
 }
 
-// Sessions returns the session cache.
-// TODO: code smell. better solution?
-func (m *Authenticator) Sessions() cache.Cache[Session] {
-	return m.sessions
+// ListSessions returns a list of sessions for a given user.
+func (m *Authenticator) ListSessions(ctx context.Context, email string) (map[string]Session, error) {
+	allSessions, err := m.sessions.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list sessions: %w", err)
+	}
+
+	userSessions := maps.Clone(allSessions)
+	maps.DeleteFunc(userSessions, func(k string, v Session) bool {
+		return v.UserInfo.Email != email
+	})
+	return userSessions, nil
+}
+
+// GetSession returns a session from the session cache.
+// We do not check if the session belongs to the user making the call.  This needs to be done by the caller.
+func (m *Authenticator) GetSession(ctx context.Context, sessionID string) (Session, error) {
+	session, err := m.sessions.Get(ctx, sessionID)
+	if err != nil {
+		return Session{}, fmt.Errorf("get session: %w", err)
+	}
+	return session, nil
+}
+
+// DeleteSession deletes a session from the session cache.
+// We do not check if the session belongs to the user making the call.  This needs to be done by the caller.
+func (m *Authenticator) DeleteSession(ctx context.Context, id string) error {
+	return m.sessions.Delete(ctx, id)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
