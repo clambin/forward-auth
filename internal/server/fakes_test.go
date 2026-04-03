@@ -23,6 +23,21 @@ type fakeAuthenticator struct {
 	mu       sync.Mutex
 }
 
+func (f *fakeAuthenticator) ListSessions(ctx context.Context, email string) (map[string]authn.Session, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (f *fakeAuthenticator) GetSession(ctx context.Context, sessionID string) (authn.Session, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (f *fakeAuthenticator) DeleteSession(ctx context.Context, id string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (f *fakeAuthenticator) Validate(_ context.Context, sessionID string) (*authn.Session, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
