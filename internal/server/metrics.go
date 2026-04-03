@@ -48,7 +48,7 @@ func (m Metrics) Collect(ch chan<- prometheus.Metric) {
 
 func (m Metrics) mw(handler string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
-		return withHandlerCtx(handler)(
+		return withHandlerInCtx(handler)(
 			instrumentedHandlerCounter(m.counter)(
 				instrumentedHandlerDuration(m.duration)(next),
 			),
@@ -62,7 +62,7 @@ func handlerFromCtx(ctx context.Context) string {
 	return ctx.Value(handlerCtxKey{}).(string)
 }
 
-func withHandlerCtx(handler string) func(next http.Handler) http.Handler {
+func withHandlerInCtx(handler string) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := context.WithValue(r.Context(), handlerCtxKey{}, handler)
