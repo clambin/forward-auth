@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"codeberg.org/clambin/go-common/cache"
+	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -30,19 +31,7 @@ var (
 	_ Cache[string] = (*redisCache[string])(nil)
 )
 
-type Configuration struct {
-	Type  string             `yaml:"type"`
-	Redis RedisConfiguration `yaml:"redis"`
-}
-
-type RedisConfiguration struct {
-	Addr     string `yaml:"addr"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-	DB       int    `yaml:"db"`
-}
-
-func New[T any](ttl time.Duration, prefix string, configuration Configuration) (Cache[T], error) {
+func New[T any](ttl time.Duration, prefix string, configuration configuration.StorageConfiguration) (Cache[T], error) {
 	var c Cache[T]
 	switch configuration.Type {
 	case "local", "":

@@ -8,42 +8,41 @@ import (
 	"maps"
 	"net/http"
 
-	"github.com/clambin/forward-auth/internal/authn"
-	"github.com/clambin/forward-auth/internal/authn/cache"
-	"github.com/clambin/forward-auth/internal/server/middleware"
+	"github.com/clambin/forward-auth/internal/cache"
+	"github.com/clambin/forward-auth/internal/sessions"
 )
 
-type Authenticator interface {
-	middleware.Authenticator
-	ListSessions(ctx context.Context) (map[string]authn.Session, error)
-	GetSession(ctx context.Context, id string) (authn.Session, error)
-	DeleteSession(ctx context.Context, id string) error
+type SessionManager interface {
+	Middleware(cookieName string, strict bool) func(handler http.Handler) http.Handler
+	List(ctx context.Context) (map[string]sessions.Session, error)
+	Get(ctx context.Context, id string) (sessions.Session, error)
+	Delete(ctx context.Context, id string) error
 }
 
-var _ Authenticator = (*authn.Authenticator)(nil)
+var _ SessionManager = (*sessions.Manager)(nil)
 
-func Handler(cookieName string, authenticator Authenticator, logger *slog.Logger) http.Handler {
+func Handler(cookieName string, sessionManager SessionManager, logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.Handle("/sessions", getSessionsHandler(authenticator, logger.With(slog.String("handler", "getSessions"))))
-	mux.Handle("GET /session/{id}", getSessionHandler(authenticator))
-	mux.Handle("DELETE /session/{id}", deleteSessionHandler(authenticator))
-	return middleware.WithSessionValidation(cookieName, authenticator, true)(mux)
+	mux.Handle("/sessions", getSessionsHandler(sessionManager, logger.With(slog.String("handler", "getSessions"))))
+	mux.Handle("GET /session/{id}", getSessionHandler(sessionManager))
+	mux.Handle("DELETE /session/{id}", deleteSessionHandler(sessionManager))
+	return sessionManager.Middleware(cookieName, true)(mux)
 }
 
-func getSessionsHandler(authenticator Authenticator, _ *slog.Logger) http.Handler {
+func getSessionsHandler(sessionManager SessionManager, _ *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// session validation runs in struct mode, so handler is only called if the session is valid
-		validationResult, _ := middleware.SessionFromCtx(r.Context())
-		allSessions, err := authenticator.ListSessions(r.Context())
+		_, session, _ := sessions.SessionFromCtx(r.Context())
+		allSessions, err := sessionManager.List(r.Context())
 		if err != nil {
 			http.Error(w, "failed to list sessions", http.StatusInternalServerError)
 			return
 		}
 		// only return sessions belonging to the user
 		userSessions := maps.Clone(allSessions)
-		maps.DeleteFunc(userSessions, func(k string, v authn.Session) bool {
-			return v.UserInfo.Email != validationResult.Session.UserInfo.Email
+		maps.DeleteFunc(userSessions, func(k string, v sessions.Session) bool {
+			return v.UserInfo.Email != session.UserInfo.Email
 		})
 		w.Header().Set("Content-Type", "application/json")
 		enc := json.NewEncoder(w)
@@ -52,10 +51,13 @@ func getSessionsHandler(authenticator Authenticator, _ *slog.Logger) http.Handle
 	})
 }
 
-func getSessionHandler(authenticator Authenticator) http.Handler {
+func getSessionHandler(sessionManager SessionManager) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// session validation runs in strict mode, so this is only called if the session is valid
+		_, mySession, _ := sessions.SessionFromCtx(r.Context())
+		// get the requested session
 		sessionID := r.PathValue("id")
-		session, err := authenticator.GetSession(r.Context(), sessionID)
+		session, err := sessionManager.Get(r.Context(), sessionID)
 		if errors.Is(err, cache.ErrNotFound) {
 			http.Error(w, "session not found", http.StatusNotFound)
 			return
@@ -64,9 +66,8 @@ func getSessionHandler(authenticator Authenticator) http.Handler {
 			http.Error(w, "failed to get session", http.StatusInternalServerError)
 			return
 		}
-		// session validation runs in struct mode, so this is only called if the session is valid
-		validationResult, _ := middleware.SessionFromCtx(r.Context())
-		if session.UserInfo.Email != validationResult.Session.UserInfo.Email {
+		// only return sessions belonging to the user
+		if session.UserInfo.Email != mySession.UserInfo.Email {
 			http.Error(w, "session does not belong to the user", http.StatusForbidden)
 			return
 		}
@@ -78,12 +79,12 @@ func getSessionHandler(authenticator Authenticator) http.Handler {
 	})
 }
 
-func deleteSessionHandler(authenticator Authenticator) http.Handler {
+func deleteSessionHandler(sessionManager SessionManager) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// session validation runs in struct mode, so this is only called if the session is valid
-		validationResult, _ := middleware.SessionFromCtx(r.Context())
+		_, mySession, _ := sessions.SessionFromCtx(r.Context())
 		sessionID := r.PathValue("id")
-		session, err := authenticator.GetSession(r.Context(), sessionID)
+		session, err := sessionManager.Get(r.Context(), sessionID)
 		if errors.Is(err, cache.ErrNotFound) {
 			http.Error(w, "session not found", http.StatusNotFound)
 			return
@@ -92,11 +93,11 @@ func deleteSessionHandler(authenticator Authenticator) http.Handler {
 			http.Error(w, "failed to get session", http.StatusInternalServerError)
 			return
 		}
-		if session.UserInfo.Email != validationResult.Session.UserInfo.Email {
+		if session.UserInfo.Email != mySession.UserInfo.Email {
 			http.Error(w, "session does not belong to the user", http.StatusForbidden)
 			return
 		}
-		if err = authenticator.DeleteSession(r.Context(), sessionID); err != nil {
+		if err = sessionManager.Delete(r.Context(), sessionID); err != nil {
 			http.Error(w, "failed to delete session", http.StatusInternalServerError)
 			return
 		}

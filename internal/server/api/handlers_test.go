@@ -1,48 +1,44 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"log/slog"
-	"maps"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
-	"github.com/clambin/forward-auth/internal/authn"
-	"github.com/clambin/forward-auth/internal/authn/cache"
 	"github.com/clambin/forward-auth/internal/authn/provider"
+	"github.com/clambin/forward-auth/internal/configuration"
+	"github.com/clambin/forward-auth/internal/sessions"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestListSessionsHandler(t *testing.T) {
 	tests := []struct {
-		name      string
-		target    string
-		sessionID string
-		wantCode  int
-		wantList  map[string]authn.Session
+		name             string
+		target           string
+		addCookie        bool
+		wantCode         int
+		wantSessionCount int
 	}{
-		{"valid", "/sessions", "1234", http.StatusOK, map[string]authn.Session{
-			"1234": {UserInfo: provider.UserInfo{Email: "foo@example.com"}},
-		}},
-		{"invalid", "/sessions", "invalid", http.StatusForbidden, nil},
+		{"valid", "/sessions", true, http.StatusOK, 1},
+		{"invalid", "/sessions", false, http.StatusUnauthorized, 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			auth := fakeAuthenticator{
-				sessions: map[string]authn.Session{
-					"1234": {UserInfo: provider.UserInfo{Email: "foo@example.com"}},
-					"5678": {UserInfo: provider.UserInfo{Email: "bar@example.com"}},
-				},
-			}
+			sessionManager, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
+			sessionID, _ := sessionManager.Add(t.Context(), provider.UserInfo{Email: "foo@example.com"})
+
 			const cookieName = "session"
-			h := Handler(cookieName, &auth, slog.New(slog.DiscardHandler))
+			h := Handler(cookieName, sessionManager, slog.New(slog.DiscardHandler))
 
 			req := httptest.NewRequest(http.MethodGet, tt.target, nil)
-			req.AddCookie(&http.Cookie{Name: cookieName, Value: tt.sessionID})
+			if tt.addCookie {
+				req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID})
+			}
 			resp := httptest.NewRecorder()
 			h.ServeHTTP(resp, req)
 			require.Equal(t, tt.wantCode, resp.Code)
@@ -51,37 +47,35 @@ func TestListSessionsHandler(t *testing.T) {
 				return
 			}
 
-			var l map[string]authn.Session
+			var l map[string]sessions.Session
 			require.NoError(t, json.NewDecoder(resp.Body).Decode(&l))
-			assert.Equal(t, tt.wantList, l)
+			assert.Len(t, l, tt.wantSessionCount)
 		})
 	}
 }
 
 func TestGetSessionHandler(t *testing.T) {
+	sessionManager, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
+	sessionIDFoo, _ := sessionManager.Add(t.Context(), provider.UserInfo{Email: "foo@example.com"})
+	sessionIDBar, _ := sessionManager.Add(t.Context(), provider.UserInfo{Email: "bar@example.com"})
+
 	tests := []struct {
 		name     string
 		target   string
 		wantCode int
 	}{
-		{"success", "/session/1234", http.StatusOK},
-		{"unauthorized session", "/session/5678", http.StatusForbidden},
+		{"success", "/session/" + sessionIDFoo, http.StatusOK},
+		{"unauthorized session", "/session/" + sessionIDBar, http.StatusForbidden},
 		{"invalid session", "/session/invalid", http.StatusNotFound},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			auth := fakeAuthenticator{
-				sessions: map[string]authn.Session{
-					"1234": {UserInfo: provider.UserInfo{Email: "foo@example.com"}},
-					"5678": {UserInfo: provider.UserInfo{Email: "bar@example.com"}},
-				},
-			}
 			const cookieName = "session"
-			h := Handler(cookieName, &auth, slog.New(slog.DiscardHandler))
+			h := Handler(cookieName, sessionManager, slog.New(slog.DiscardHandler))
 
 			req := httptest.NewRequest(http.MethodGet, tt.target, nil)
-			req.AddCookie(&http.Cookie{Name: cookieName, Value: "1234"})
+			req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionIDFoo})
 			resp := httptest.NewRecorder()
 			h.ServeHTTP(resp, req)
 			require.Equal(t, tt.wantCode, resp.Code)
@@ -90,65 +84,31 @@ func TestGetSessionHandler(t *testing.T) {
 }
 
 func TestDeleteSessionHandler(t *testing.T) {
+	sessionManager, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
+	sessionIDFoo, _ := sessionManager.Add(t.Context(), provider.UserInfo{Email: "foo@example.com"})
+	sessionIDFoo2, _ := sessionManager.Add(t.Context(), provider.UserInfo{Email: "foo@example.com"})
+	sessionIDBar, _ := sessionManager.Add(t.Context(), provider.UserInfo{Email: "bar@example.com"})
+
 	tests := []struct {
 		name     string
 		target   string
 		wantCode int
 	}{
-		{"success", "/session/1234", http.StatusNoContent},
-		{"unauthorized session", "/session/5678", http.StatusForbidden},
-		{"invalid session", "/session/invalid", http.StatusNotFound},
+		{"success", "/session/" + sessionIDFoo, http.StatusNoContent},
+		{"unauthorized session", "/session/" + sessionIDBar, http.StatusForbidden},
+		{"invalid session", "/session/invalid" + sessionIDFoo, http.StatusNotFound},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			auth := fakeAuthenticator{
-				sessions: map[string]authn.Session{
-					"1234": {UserInfo: provider.UserInfo{Email: "foo@example.com"}},
-					"5678": {UserInfo: provider.UserInfo{Email: "bar@example.com"}},
-				},
-			}
 			const cookieName = "session"
-			h := Handler(cookieName, &auth, slog.New(slog.DiscardHandler))
+			h := Handler(cookieName, sessionManager, slog.New(slog.DiscardHandler))
 
 			req := httptest.NewRequest(http.MethodDelete, tt.target, nil)
-			req.AddCookie(&http.Cookie{Name: cookieName, Value: "1234"})
+			req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionIDFoo2})
 			resp := httptest.NewRecorder()
 			h.ServeHTTP(resp, req)
 			require.Equal(t, tt.wantCode, resp.Code)
 		})
 	}
-
-}
-
-var _ Authenticator = &fakeAuthenticator{}
-
-type fakeAuthenticator struct {
-	sessions map[string]authn.Session
-}
-
-func (f fakeAuthenticator) Validate(_ context.Context, sessionID string) (*authn.Session, error) {
-	if session, ok := f.sessions[sessionID]; ok {
-		return &session, nil
-	}
-	return nil, cache.ErrNotFound
-}
-
-func (f fakeAuthenticator) ListSessions(_ context.Context) (map[string]authn.Session, error) {
-	return maps.Clone(f.sessions), nil
-}
-
-func (f fakeAuthenticator) GetSession(_ context.Context, sessionID string) (authn.Session, error) {
-	if session, ok := f.sessions[sessionID]; ok {
-		return session, nil
-	}
-	return authn.Session{}, cache.ErrNotFound
-}
-
-func (f fakeAuthenticator) DeleteSession(_ context.Context, sessionID string) error {
-	if _, ok := f.sessions[sessionID]; !ok {
-		return cache.ErrNotFound
-	}
-	delete(f.sessions, sessionID)
-	return nil
 }
