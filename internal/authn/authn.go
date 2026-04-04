@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"maps"
 	"time"
 
 	"github.com/clambin/forward-auth/internal/authn/cache"
@@ -109,17 +108,8 @@ func (m *Authenticator) ConfirmLogin(ctx context.Context, state string, code str
 }
 
 // ListSessions returns a list of sessions for a given user.
-func (m *Authenticator) ListSessions(ctx context.Context, email string) (map[string]Session, error) {
-	allSessions, err := m.sessions.List(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list sessions: %w", err)
-	}
-
-	userSessions := maps.Clone(allSessions)
-	maps.DeleteFunc(userSessions, func(k string, v Session) bool {
-		return v.UserInfo.Email != email
-	})
-	return userSessions, nil
+func (m *Authenticator) ListSessions(ctx context.Context) (map[string]Session, error) {
+	return m.sessions.List(ctx)
 }
 
 // GetSession returns a session from the session cache.

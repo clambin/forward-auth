@@ -134,12 +134,8 @@ func (f fakeAuthenticator) Validate(_ context.Context, sessionID string) (*authn
 	return nil, cache.ErrNotFound
 }
 
-func (f fakeAuthenticator) ListSessions(_ context.Context, email string) (map[string]authn.Session, error) {
-	sessions := maps.Clone(f.sessions)
-	maps.DeleteFunc(sessions, func(k string, v authn.Session) bool {
-		return v.UserInfo.Email != email
-	})
-	return sessions, nil
+func (f fakeAuthenticator) ListSessions(_ context.Context) (map[string]authn.Session, error) {
+	return maps.Clone(f.sessions), nil
 }
 
 func (f fakeAuthenticator) GetSession(_ context.Context, sessionID string) (authn.Session, error) {

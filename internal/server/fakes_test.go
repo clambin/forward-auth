@@ -23,12 +23,12 @@ type fakeAuthenticator struct {
 	mu       sync.Mutex
 }
 
-func (f *fakeAuthenticator) ListSessions(ctx context.Context, email string) (map[string]authn.Session, error) {
+func (f *fakeAuthenticator) ListSessions(ctx context.Context) (map[string]authn.Session, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (f *fakeAuthenticator) GetSession(ctx context.Context, sessionID string) (authn.Session, error) {
+func (f *fakeAuthenticator) GetSession(ctx context.Context, id string) (authn.Session, error) {
 	//TODO implement me
 	panic("implement me")
 }
