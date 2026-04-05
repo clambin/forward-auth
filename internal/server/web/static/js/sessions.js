@@ -15,7 +15,7 @@ export function populateSessions(sessions) {
         const row = document.createElement('tr');
         row.innerHTML = `
             <td>${session.user_info.email}</td>
-            <td>${session.lastSeen}</td>
+            <td>${session.last_seen}</td>
         `;
         tbody.appendChild(row);
     });
