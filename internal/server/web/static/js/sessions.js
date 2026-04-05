@@ -11,10 +11,10 @@ export function populateSessions(sessions) {
     const tbody = sessionTable.querySelector('tbody');
     tbody.innerHTML = '';
 
-    sessions.forEach(session => {
+    Object.entries(sessions).forEach(([id, session]) => {
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td>${session.user}</td>
+            <td>${session.user_info.email}</td>
             <td>${session.lastSeen}</td>
         `;
         tbody.appendChild(row);
