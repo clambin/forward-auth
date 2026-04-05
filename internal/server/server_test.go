@@ -24,7 +24,7 @@ func TestServer(t *testing.T) {
 	h := New(cfg.Server, s, an, az, nil, GetMetrics(), slog.New(slog.DiscardHandler))
 
 	// forward-auth
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/forwardAuth", nil)
 	resp := httptest.NewRecorder()
 	h.ServeHTTP(resp, req)
 	require.Equal(t, http.StatusSeeOther, resp.Code)

@@ -4,10 +4,12 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/server/api"
 	"github.com/clambin/forward-auth/internal/server/forwardauth"
+	"github.com/clambin/forward-auth/internal/server/web"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -31,7 +33,7 @@ func New(
 ) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.Handle("/",
+	mux.Handle("/forwardAuth",
 		withRequestLogger(logger)(
 			metrics.mw("forwardAuth")(
 				forwardauth.AuthHandler(
@@ -75,5 +77,39 @@ func New(
 	)
 
 	mux.Handle("/healthz", healthCheckHandler(redisClient, logger.With("handler", "healthCheck")))
+
+	mux.Handle("/",
+		withRequestLogger(logger)(
+			web.New(),
+		))
 	return mux
+}
+
+// withRequestLogger logs the request method, path, and duration.
+func withRequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			lw := &loggingResponseWriter{ResponseWriter: w}
+			start := time.Now()
+			next.ServeHTTP(lw, r)
+			logger.Debug("request",
+				slog.String("method", r.Method),
+				slog.String("path", r.URL.Path),
+				slog.Int("status", lw.code),
+				slog.Duration("duration", time.Since(start)),
+			)
+		})
+	}
+}
+
+var _ http.ResponseWriter = (*loggingResponseWriter)(nil)
+
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	code int
+}
+
+func (l *loggingResponseWriter) WriteHeader(statusCode int) {
+	l.code = statusCode
+	l.ResponseWriter.WriteHeader(statusCode)
 }
