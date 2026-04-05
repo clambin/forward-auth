@@ -1,0 +1,10 @@
+{
+  "name": "forward-auth",
+  "version": "1.0.0",
+  "description": "Forward-Auth session management tests",
+  "type": "module",
+  "scripts": {
+    "test": "node internal/server/web/tests/api.test.js && node internal/server/web/tests/sessions.test.js"
+  },
+  "private": true
+}

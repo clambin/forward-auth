@@ -5,3 +5,12 @@ export async function listSessions() {
     }
     return await r.json();
 }
+
+export async function deleteSession(id) {
+    const r = await fetch(`/api/v1/session/${id}`, {
+        method: 'DELETE',
+    });
+    if (!r.ok) {
+        throw new Error(`Failed to delete session ${id}`);
+    }
+}
