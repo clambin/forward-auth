@@ -1,54 +1,44 @@
-import { test, assertEquals, assert } from './test_runner.js';
-import { populateSessions, setSessionTable } from '../static/js/sessions.js';
+/**
+ * @vitest-environment happy-dom
+ */
+import { test, expect, beforeEach, vi } from 'vitest';
+import { loadSessions, setSessionTable } from '../static/js/sessions.js';
 
-// Mock DOM
-const mockDocument = {
-    ownerDocument: null,
-    getElementById: (id) => {
-        if (id === 'session-table') {
-            return {
-                ownerDocument: mockDocument,
-                querySelector: (q) => {
-                    if (q === 'tbody') {
-                        return {
-                            innerHTML: '',
-                            appendChild: (child) => {
-                                mockDocument.tbodyChildren.push(child);
-                            }
-                        }
-                    }
-                },
-                querySelectorAll: (q) => []
-            }
-        }
-        return null;
-    },
-    createElement: (tag) => {
-        return {
-            dataset: {},
-            innerHTML: '',
-            appendChild: (c) => {}
-        }
-    },
-    tbodyChildren: []
-};
+// Mock fetch globally
+global.fetch = vi.fn();
 
-await test('populateSessions renders correctly', async () => {
-    mockDocument.tbodyChildren = [];
-    setSessionTable(mockDocument.getElementById('session-table'));
-    
+beforeEach(() => {
+    document.body.innerHTML = `
+        <table id="session-table">
+            <thead>
+                <tr><th><input type="checkbox" id="select-all"/></th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    `;
+    setSessionTable(document.getElementById('session-table'));
+    vi.clearAllMocks();
+});
+
+test('loadSessions renders correctly', async () => {
     const sessions = {
         "id1": { user_info: { email: "user1@example.com" }, last_seen: "2024-01-01" },
         "id2": { user_info: { email: "user2@example.com" }, last_seen: "2024-01-02" }
     };
     
-    populateSessions(sessions);
+    global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => sessions
+    });
+
+    await loadSessions();
     
-    assertEquals(mockDocument.tbodyChildren.length, 2);
-    assertEquals(mockDocument.tbodyChildren[0].dataset.sessionId, "id1");
-    assert(mockDocument.tbodyChildren[0].innerHTML.includes("user1@example.com"));
-    assert(mockDocument.tbodyChildren[0].innerHTML.includes(new Date("2024-01-01").toLocaleString()));
-    assertEquals(mockDocument.tbodyChildren[1].dataset.sessionId, "id2");
-    assert(mockDocument.tbodyChildren[1].innerHTML.includes("user2@example.com"));
-    assert(mockDocument.tbodyChildren[1].innerHTML.includes(new Date("2024-01-02").toLocaleString()));
+    const rows = document.querySelectorAll('tbody tr');
+    expect(rows.length).toBe(2);
+    expect(rows[0].dataset.sessionId).toBe("id1");
+    expect(rows[0].innerHTML).toContain("user1@example.com");
+    expect(rows[0].innerHTML).toContain(new Date("2024-01-01").toLocaleString());
+    expect(rows[1].dataset.sessionId).toBe("id2");
+    expect(rows[1].innerHTML).toContain("user2@example.com");
+    expect(rows[1].innerHTML).toContain(new Date("2024-01-02").toLocaleString());
 });

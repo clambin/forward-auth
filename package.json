@@ -4,7 +4,11 @@
   "description": "Forward-Auth session management tests",
   "type": "module",
   "scripts": {
-    "test": "node internal/server/web/tests/api.test.js && node internal/server/web/tests/sessions.test.js"
+    "test": "vitest run"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "happy-dom": "^20.8.9",
+    "vitest": "^4.1.2"
+  }
 }

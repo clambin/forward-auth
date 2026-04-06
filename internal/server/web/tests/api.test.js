@@ -1,8 +1,8 @@
-import { test, assertEquals, assert } from './test_runner.js';
+import { test, expect, vi } from 'vitest';
 import { listSessions, deleteSession } from '../static/js/api.js';
 
 // Mock fetch globally
-global.fetch = async (url, options) => {
+global.fetch = vi.fn(async (url, options) => {
     if (url === '/api/v1/sessions') {
         return {
             ok: true,
@@ -20,24 +20,20 @@ global.fetch = async (url, options) => {
         return { ok: true };
     }
     return { ok: false };
-};
-
-await test('listSessions fetches correctly', async () => {
-    const sessions = await listSessions();
-    assertEquals(Object.keys(sessions).length, 2);
-    assertEquals(sessions.id1.user_info.email, "user1@example.com");
 });
 
-await test('deleteSession calls correct URL', async () => {
+test('listSessions fetches correctly', async () => {
+    const sessions = await listSessions();
+    expect(Object.keys(sessions).length).toBe(2);
+    expect(sessions.id1.user_info.email).toBe("user1@example.com");
+});
+
+test('deleteSession calls correct URL', async () => {
     // Should not throw
     await deleteSession('id1');
+    expect(global.fetch).toHaveBeenCalledWith('/api/v1/session/id1', expect.any(Object));
 });
 
-await test('deleteSession throws on failure', async () => {
-    try {
-        await deleteSession('fail');
-        assert(false, "Should have thrown an error");
-    } catch (e) {
-        assert(e.message.includes('Failed to delete session fail'));
-    }
+test('deleteSession throws on failure', async () => {
+    await expect(deleteSession('fail')).rejects.toThrow('Failed to delete session fail');
 });
