@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"codeberg.org/clambin/go-common/cache"
+	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -30,19 +31,7 @@ var (
 	_ Cache[string] = (*redisCache[string])(nil)
 )
 
-type Configuration struct {
-	Type  string             `yaml:"type"`
-	Redis RedisConfiguration `yaml:"redis"`
-}
-
-type RedisConfiguration struct {
-	Addr     string `yaml:"addr"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-	DB       int    `yaml:"db"`
-}
-
-func New[T any](ttl time.Duration, prefix string, configuration Configuration) (Cache[T], error) {
+func New[T any](ttl time.Duration, prefix string, configuration configuration.StorageConfiguration) (Cache[T], error) {
 	var c Cache[T]
 	switch configuration.Type {
 	case "local", "":
@@ -98,13 +87,9 @@ func (c *localCache[T]) TTL() time.Duration {
 }
 
 func (c *localCache[T]) List(_ context.Context) (map[string]T, error) {
-	keys := c.cache.Keys()
-	items := make(map[string]T, len(keys))
-	for _, key := range keys {
-		v, ok := c.cache.Get(key)
-		if ok {
-			items[key] = v
-		}
+	items := make(map[string]T)
+	for k, v := range c.cache.Iterate() {
+		items[k] = v
 	}
 	return items, nil
 }
@@ -150,8 +135,7 @@ func (c *redisCache[T]) TTL() time.Duration {
 }
 
 func (c *redisCache[T]) List(ctx context.Context) (map[string]T, error) {
-	pattern := c.prefixedID("*")
-	keys, err := c.client.Keys(ctx, pattern).Result()
+	keys, err := c.client.Keys(ctx, c.prefixedID("*")).Result()
 	if err != nil {
 		return nil, err
 	}
@@ -166,10 +150,10 @@ func (c *redisCache[T]) List(ctx context.Context) (map[string]T, error) {
 }
 
 func (c *redisCache[T]) prefixedID(id string) string {
-	if c.prefix != "" {
-		id = c.prefix + id
+	if c.prefix == "" {
+		return id
 	}
-	return id
+	return c.prefix + id
 }
 
 func (c *redisCache[T]) unprefixedKey(key string) string {

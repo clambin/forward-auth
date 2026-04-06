@@ -15,6 +15,7 @@ import (
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/server"
+	"github.com/clambin/forward-auth/internal/sessions"
 	"github.com/goccy/go-yaml"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
@@ -37,7 +38,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	authenticator, err := authn.New(ctx, cfg.Authn)
+	authenticator, err := authn.New(ctx, cfg)
 	if err != nil {
 		logger.Error("failed to create authenticator", "err", err)
 		os.Exit(1)
@@ -49,13 +50,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	sessionMgr, err := sessions.New(cfg.Session.SessionTTL, cfg.Storage)
+	if err != nil {
+		logger.Error("failed to create session manager", "err", err)
+		os.Exit(1)
+	}
+
 	var redisClient server.RedisClient
-	if cfg.Authn.Storage.Type == "redis" {
+	if cfg.Storage.Type == "redis" {
 		redisClient = redis.NewClient(&redis.Options{
-			Addr:     cfg.Authn.Storage.Redis.Addr,
-			Username: cfg.Authn.Storage.Redis.Username,
-			Password: cfg.Authn.Storage.Redis.Password,
-			DB:       cfg.Authn.Storage.Redis.DB,
+			Addr:     cfg.Storage.Redis.Addr,
+			Username: cfg.Storage.Redis.Username,
+			Password: cfg.Storage.Redis.Password,
+			DB:       cfg.Storage.Redis.DB,
 		})
 	}
 
@@ -73,7 +80,7 @@ func main() {
 	g.Go(func() error {
 		return httputils.RunServer(ctx, &http.Server{
 			Addr:    cfg.Server.Addr,
-			Handler: server.New(cfg.Server, authenticator, authorizer, redisClient, metrics, logger),
+			Handler: server.New(cfg.Server, sessionMgr, authenticator, authorizer, redisClient, metrics, logger),
 		})
 	})
 	if err = g.Wait(); err != nil {

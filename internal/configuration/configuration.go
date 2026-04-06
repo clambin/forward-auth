@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"codeberg.org/clambin/go-common/httputils"
-	"github.com/clambin/forward-auth/internal/authn/cache"
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/prometheus/client_golang/prometheus"
@@ -32,10 +31,12 @@ var DefaultConfiguration = Configuration{
 		Path: "/metrics",
 	},
 	Authn: AuthnConfiguration{
+		StateTTL: 10 * time.Minute,
+		Provider: provider.Configuration{Type: "google"},
+	},
+	Storage: StorageConfiguration{Type: "local"},
+	Session: SessionConfiguration{
 		SessionTTL: 24 * time.Hour,
-		StateTTL:   10 * time.Minute,
-		Storage:    cache.Configuration{Type: "local"},
-		Provider:   provider.Configuration{Type: "google"},
 	},
 }
 
@@ -45,17 +46,8 @@ type Configuration struct {
 	Prometheus PrometheusConfiguration `yaml:"prometheus"`
 	Authz      AuthzConfiguration      `yaml:"authz"`
 	Authn      AuthnConfiguration      `yaml:"authn"`
-}
-
-type AuthnConfiguration struct {
-	Provider   provider.Configuration `yaml:"provider"`
-	Storage    cache.Configuration    `yaml:"storage"`
-	SessionTTL time.Duration          `yaml:"session_ttl"`
-	StateTTL   time.Duration          `yaml:"state_ttl"`
-}
-
-type AuthzConfiguration struct {
-	Rules []authz.Rule `yaml:"rules"`
+	Storage    StorageConfiguration    `yaml:"storage"`
+	Session    SessionConfiguration    `yaml:"session"`
 }
 
 type ServerConfiguration struct {
@@ -110,4 +102,29 @@ func (c PrometheusConfiguration) RunServer(ctx context.Context, g prometheus.Gat
 		Addr:    c.Addr,
 		Handler: h,
 	})
+}
+
+type AuthnConfiguration struct {
+	Provider provider.Configuration `yaml:"provider"`
+	StateTTL time.Duration          `yaml:"state_ttl"`
+}
+
+type AuthzConfiguration struct {
+	Rules []authz.Rule `yaml:"rules"`
+}
+
+type StorageConfiguration struct {
+	Type  string                    `yaml:"type"`
+	Redis StorageRedisConfiguration `yaml:"redis"`
+}
+
+type StorageRedisConfiguration struct {
+	Addr     string `yaml:"addr"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	DB       int    `yaml:"db"`
+}
+
+type SessionConfiguration struct {
+	SessionTTL time.Duration `yaml:"session_ttl"`
 }

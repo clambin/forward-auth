@@ -4,12 +4,12 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"time"
 
-	"github.com/clambin/forward-auth/internal/authn"
-	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/clambin/forward-auth/internal/configuration"
+	"github.com/clambin/forward-auth/internal/server/api"
+	"github.com/clambin/forward-auth/internal/server/forwardauth"
+	"github.com/clambin/forward-auth/internal/server/web"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -17,61 +17,99 @@ type RedisClient interface {
 	Ping(ctx context.Context) *redis.StatusCmd
 }
 
-type Authenticator interface {
-	Validate(ctx context.Context, sessionID string) (*authn.Session, error)
-	Close(ctx context.Context, sessionID string) error
-	InitiateLogin(ctx context.Context, url string) (string, error)
-	ConfirmLogin(ctx context.Context, state string, code string) (*authn.Session, string, string, time.Duration, error)
+type SessionManager interface {
+	forwardauth.SessionManager
+	api.SessionManager
 }
-
-var _ Authenticator = (*authn.Authenticator)(nil)
-
-type Authorizer interface {
-	Allow(url *url.URL, user string) bool
-}
-
-var _ Authorizer = (*authz.Authorizer)(nil)
 
 func New(
 	configuration configuration.ServerConfiguration,
-	authenticator Authenticator,
-	authorizer Authorizer,
+	sessionManager SessionManager,
+	authenticator forwardauth.Authenticator,
+	authorizer forwardauth.Authorizer,
 	redisClient RedisClient,
 	metrics Metrics,
 	logger *slog.Logger,
 ) http.Handler {
 	mux := http.NewServeMux()
 
-	forwardAuthMux := http.NewServeMux()
-	forwardAuthMux.Handle("/", forwardAuthHandler(
-		configuration.CookieName,
-		authenticator,
-		authorizer,
-		logger.With(slog.String("handler", "forwardAuth")),
-	))
-	forwardAuthMux.Handle("/_oauth/logout", logoutHandler(
-		configuration.CookieName,
-		configuration.Domain,
-		authenticator,
-		logger.With(slog.String("handler", "logout")),
-	))
-
-	mux.Handle("/", metrics.mw("forwardAuth")(
-		forwardAuthMiddleware()(
-			withRequestLogger(logger)(forwardAuthMux),
-		),
-	))
-	mux.Handle("/_oauth", metrics.mw("login")(
+	mux.Handle("/forwardAuth",
 		withRequestLogger(logger)(
-			loginHandler(
-				configuration.CookieName,
-				configuration.Domain,
-				authenticator,
-				logger.With("handler", "login"),
+			metrics.mw("forwardAuth")(
+				forwardauth.AuthHandler(
+					configuration.CookieName,
+					configuration.Domain,
+					sessionManager,
+					authenticator,
+					authorizer,
+					logger.With("handler", "forwardAuth"),
+				),
 			),
 		),
-	))
+	)
+
+	mux.Handle("/_oauth",
+		withRequestLogger(logger)(
+			metrics.mw("login")(
+				forwardauth.LoginHandler(
+					configuration.CookieName,
+					configuration.Domain,
+					authenticator,
+					sessionManager,
+					logger.With("handler", "login"),
+				),
+			),
+		),
+	)
+
+	mux.Handle("/api/v1/",
+		withRequestLogger(logger)(
+			metrics.mw("api.v1")(
+				http.StripPrefix("/api/v1",
+					api.Handler(
+						configuration.CookieName,
+						sessionManager,
+						logger.With("handler", "api"),
+					),
+				),
+			),
+		),
+	)
+
 	mux.Handle("/healthz", healthCheckHandler(redisClient, logger.With("handler", "healthCheck")))
 
+	mux.Handle("/",
+		withRequestLogger(logger)(
+			web.New(),
+		))
 	return mux
+}
+
+// withRequestLogger logs the request method, path, and duration.
+func withRequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			lw := &loggingResponseWriter{ResponseWriter: w}
+			start := time.Now()
+			next.ServeHTTP(lw, r)
+			logger.Debug("request",
+				slog.String("method", r.Method),
+				slog.String("path", r.URL.Path),
+				slog.Int("status", lw.code),
+				slog.Duration("duration", time.Since(start)),
+			)
+		})
+	}
+}
+
+var _ http.ResponseWriter = (*loggingResponseWriter)(nil)
+
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	code int
+}
+
+func (l *loggingResponseWriter) WriteHeader(statusCode int) {
+	l.code = statusCode
+	l.ResponseWriter.WriteHeader(statusCode)
 }

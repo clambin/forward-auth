@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
@@ -20,12 +21,12 @@ func TestBackEnd(t *testing.T) {
 
 	tests := []struct {
 		name string
-		cfg  Configuration
+		cfg  configuration.StorageConfiguration
 		err  require.ErrorAssertionFunc
 	}{
-		{"in-memory", Configuration{}, require.NoError},
-		{"redis", Configuration{Type: "redis", Redis: RedisConfiguration{Addr: endpoint}}, require.NoError},
-		{"invalid", Configuration{Type: "invalid"}, require.Error},
+		{"in-memory", configuration.StorageConfiguration{}, require.NoError},
+		{"redis", configuration.StorageConfiguration{Type: "redis", Redis: configuration.StorageRedisConfiguration{Addr: endpoint}}, require.NoError},
+		{"invalid", configuration.StorageConfiguration{Type: "invalid"}, require.Error},
 	}
 
 	for _, tt := range tests {

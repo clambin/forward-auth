@@ -3,11 +3,27 @@ on:
   push:
     branches-ignore:
       - main
-      - refactor
+      - api
+  workflow_call:
+    secrets:
+      codecov-token:
+        required: false
 permissions:
   contents: read
 jobs:
-  test:
+  go-test:
     uses: clambin/workflows/.github/workflows/test.yaml@main
     secrets:
-      codecov-token: ${{ secrets.CODECOV_TOKEN }}
+      codecov-token: ${{ secrets.codecov-token || secrets.CODECOV_TOKEN }}
+  js-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-node@v6.3.0
+        with:
+          node-version: 24
+          cache: 'npm'
+      - name: test
+        run: |
+          npm ci
+          npm run test

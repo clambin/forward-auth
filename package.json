@@ -1,0 +1,14 @@
+{
+  "name": "forward-auth",
+  "version": "1.0.0",
+  "description": "Forward-Auth session management tests",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "private": true,
+  "devDependencies": {
+    "happy-dom": "^20.8.9",
+    "vitest": "^4.1.2"
+  }
+}
