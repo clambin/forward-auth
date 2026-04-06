@@ -12,8 +12,7 @@ import (
 )
 
 const (
-	redisSessionKeyPrefix = "forward-auth-session"
-	redisStateKeyPrefix   = "forward-auth-state"
+	stateKeyPrefix = "forward-auth-state"
 )
 
 // Authenticator authenticates users and manages user sessions.
@@ -26,7 +25,7 @@ type Authenticator struct {
 func New(ctx context.Context, configuration configuration.Configuration) (*Authenticator, error) {
 	var err error
 	var mgr Authenticator
-	mgr.states.cache, err = cache.New[string](configuration.Authn.StateTTL, redisStateKeyPrefix, configuration.Storage)
+	mgr.states.cache, err = cache.New[string](configuration.Authn.StateTTL, stateKeyPrefix, configuration.Storage)
 	if err != nil {
 		return nil, fmt.Errorf("state store: %w", err)
 	}
@@ -74,7 +73,7 @@ type states struct {
 }
 
 func (s *states) Allocate(ctx context.Context, value string) (string, error) {
-	state := makeRandomID()
+	state := makeRandomState()
 	return state, s.cache.Set(ctx, state, value)
 }
 
@@ -84,7 +83,7 @@ func (s *states) Validate(ctx context.Context, state string) (string, error) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-func makeRandomID() string {
+func makeRandomState() string {
 	const size = 32 // 256 bits
 	var b [size]byte
 	_, _ = rand.Read(b[:])

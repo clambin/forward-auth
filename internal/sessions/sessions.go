@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	sessionPrefix = "forward-auth-session"
+	sessionKeyPrefix = "forward-auth-session"
 )
 
 type Session struct {
@@ -28,7 +28,7 @@ type Manager struct {
 }
 
 func New(ttl time.Duration, cfg configuration.StorageConfiguration) (*Manager, error) {
-	store, err := cache.New[Session](ttl, sessionPrefix, cfg)
+	store, err := cache.New[Session](ttl, sessionKeyPrefix, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("session store: %w", err)
 	}
