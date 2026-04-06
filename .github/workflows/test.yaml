@@ -4,13 +4,17 @@ on:
     branches-ignore:
       - main
       - api
+  workflow_call:
+    secrets:
+      codecov-token:
+        required: false
 permissions:
   contents: read
 jobs:
   go-test:
     uses: clambin/workflows/.github/workflows/test.yaml@main
     secrets:
-      codecov-token: ${{ secrets.CODECOV_TOKEN }}
+      codecov-token: ${{ secrets.codecov-token || secrets.CODECOV_TOKEN }}
   js-test:
     runs-on: ubuntu-latest
     steps:
