@@ -64,6 +64,7 @@ func (m *Manager) Middleware(cookieName string, strict bool) func(handler http.H
 			}
 			if err == nil {
 				session.LastSeen = time.Now()
+				session.UserAgent = r.UserAgent()
 				if err = m.Update(r.Context(), sessionID, session); err != nil {
 					http.Error(w, "failed to update session", http.StatusInternalServerError)
 					return
