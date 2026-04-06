@@ -18,8 +18,9 @@ const (
 )
 
 type Session struct {
-	LastSeen time.Time         `json:"last_seen"`
-	UserInfo provider.UserInfo `json:"user_info"`
+	LastSeen  time.Time         `json:"last_seen"`
+	UserAgent string            `json:"user_agent"`
+	UserInfo  provider.UserInfo `json:"user_info"`
 }
 
 type Manager struct {
@@ -34,11 +35,12 @@ func New(ttl time.Duration, cfg configuration.StorageConfiguration) (*Manager, e
 	return &Manager{Cache: store}, nil
 }
 
-func (m *Manager) Add(ctx context.Context, userInfo provider.UserInfo) (string, error) {
+func (m *Manager) Add(ctx context.Context, userInfo provider.UserInfo, userAgent string) (string, error) {
 	sessionID := makeRandomSessionID()
 	session := Session{
-		UserInfo: userInfo,
-		LastSeen: time.Now(),
+		UserInfo:  userInfo,
+		UserAgent: userAgent,
+		LastSeen:  time.Now(),
 	}
 	if err := m.Set(ctx, sessionID, session); err != nil {
 		return "", fmt.Errorf("session store: %w", err)

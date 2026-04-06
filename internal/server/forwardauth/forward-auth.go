@@ -21,7 +21,7 @@ const (
 
 type SessionManager interface {
 	Middleware(cookieName string, strict bool) func(http.Handler) http.Handler
-	Add(ctx context.Context, userInfo provider.UserInfo) (string, error)
+	Add(ctx context.Context, userInfo provider.UserInfo, userAgent string) (string, error)
 	Delete(ctx context.Context, id string) error
 	TTL() time.Duration
 }
@@ -202,7 +202,7 @@ func LoginHandler(
 		}
 
 		// create a session in the session cache
-		sessionID, err := mgr.Add(r.Context(), userInfo)
+		sessionID, err := mgr.Add(r.Context(), userInfo, r.UserAgent())
 		if err != nil {
 			logger.Warn("rejecting login request: failed to create session", "err", err)
 			http.Error(w, "failed to create session", http.StatusInternalServerError)

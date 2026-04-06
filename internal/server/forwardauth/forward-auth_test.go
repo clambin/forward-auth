@@ -46,7 +46,7 @@ func TestForwardAuthHandler(t *testing.T) {
 
 			req := forwardAuthRequest(tt.target)
 			if tt.withSession {
-				sessionID, err := mgr.Add(t.Context(), provider.UserInfo{Email: "foo@example.com"})
+				sessionID, err := mgr.Add(t.Context(), provider.UserInfo{Email: "foo@example.com"}, "")
 				require.NoError(t, err)
 				req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID})
 			}

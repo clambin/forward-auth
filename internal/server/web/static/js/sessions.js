@@ -34,6 +34,7 @@ function populateSessions(sessions) {
         row.innerHTML = `
             <td><input type="checkbox" class="session-select"/></td>
             <td>${session.user_info.email}</td>
+            <td>${session.user_agent}</td>
             <td>${lastSeen}</td>
         `;
         tbody.appendChild(row);
