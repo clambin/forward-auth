@@ -34,18 +34,18 @@ func New(
 	mux := http.NewServeMux()
 
 	mux.Handle("/forwardAuth",
-		withRequestLogger(logger)(
-			metrics.mw("forwardAuth")(
-				forwardauth.AuthHandler(
-					configuration.CookieName,
-					configuration.Domain,
-					sessionManager,
-					authenticator,
-					authorizer,
-					logger.With("handler", "forwardAuth"),
-				),
+		//withRequestLogger(logger)(
+		metrics.mw("forwardAuth")(
+			forwardauth.AuthHandler(
+				configuration.CookieName,
+				configuration.Domain,
+				sessionManager,
+				authenticator,
+				authorizer,
+				logger.With("handler", "forwardAuth"),
 			),
 		),
+		//),
 	)
 
 	mux.Handle("/_oauth",
