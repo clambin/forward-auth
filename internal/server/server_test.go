@@ -24,13 +24,13 @@ func TestServer(t *testing.T) {
 	h := New(cfg.Server, s, an, az, nil, GetMetrics(), slog.New(slog.DiscardHandler))
 
 	// forward-auth
-	req := httptest.NewRequest(http.MethodGet, "/forwardAuth", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/forwardauth", nil)
 	resp := httptest.NewRecorder()
 	h.ServeHTTP(resp, req)
 	require.Equal(t, http.StatusSeeOther, resp.Code)
 
-	// _oauth login
-	req = httptest.NewRequest(http.MethodGet, "/_oauth", nil)
+	// login
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/auth/login", nil)
 	resp = httptest.NewRecorder()
 	h.ServeHTTP(resp, req)
 	require.Equal(t, http.StatusBadRequest, resp.Code)
@@ -42,9 +42,8 @@ func TestServer(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.Code)
 
 	// API
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/sessions", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/sessions/list", nil)
 	resp = httptest.NewRecorder()
 	h.ServeHTTP(resp, req)
 	require.Equal(t, http.StatusUnauthorized, resp.Code)
-
 }
