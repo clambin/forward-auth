@@ -8,7 +8,6 @@ import (
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/server/api/v1"
 	"github.com/clambin/forward-auth/internal/server/forwardauth"
-	"github.com/clambin/forward-auth/internal/server/middleware"
 	"github.com/clambin/forward-auth/internal/server/web"
 	"github.com/redis/go-redis/v9"
 )
@@ -27,7 +26,6 @@ func New(
 	logger *slog.Logger,
 ) http.Handler {
 	mux := http.NewServeMux()
-
 	mux.Handle("/api/v1/",
 		metrics.mw("api.v1")(
 			http.StripPrefix("/api/v1",
@@ -37,18 +35,12 @@ func New(
 					authenticator,
 					authorizer,
 					sessionManager,
-					logger.With("handler", "api"),
+					logger,
 				),
 			),
 		),
 	)
-
-	mux.Handle("/",
-		middleware.WithRequestLogger(logger)(
-			web.New(),
-		),
-	)
-
+	mux.Handle("/", web.New())
 	mux.Handle("/healthz", healthCheckHandler(redisClient, logger.With("handler", "healthCheck")))
 	return mux
 }

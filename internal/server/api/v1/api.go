@@ -21,9 +21,10 @@ func New(
 	mux.Handle("/auth/", http.StripPrefix("/auth",
 		routeAuth(cookieName, domain, authenticator, authorizer, sessionManager, logger),
 	))
+	l := logger.With("handler", "api.v1.sessions")
 	mux.Handle("/sessions/", http.StripPrefix("/sessions",
-		middleware.WithRequestLogger(logger)(
-			routeSessions(cookieName, sessionManager, logger),
+		middleware.WithRequestLogger(l)(
+			routeSessions(cookieName, sessionManager, l),
 		),
 	))
 	return mux
@@ -51,7 +52,7 @@ func routeAuth(
 
 func routeSessions(cookieName string, sessionManager forwardauth.SessionManager, logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("/list", getSessionsHandler(sessionManager, logger.With("handler", "getSessions")))
-	mux.Handle("DELETE /session/{id}", deleteSessionHandler(sessionManager))
+	mux.Handle("/list", getSessionsHandler(sessionManager, logger.With(slog.String("handler", "getSessions"))))
+	mux.Handle("DELETE /session/{id}", deleteSessionHandler(sessionManager, logger.With(slog.String("handler", "deleteSession"))))
 	return sessionManager.Middleware(cookieName, true)(mux)
 }
