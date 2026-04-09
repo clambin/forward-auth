@@ -1,4 +1,4 @@
-package forwardauth
+package server
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/sessions"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,17 +24,14 @@ import (
 func TestForwardAuthHandler(t *testing.T) {
 	tests := []struct {
 		name        string
-		target      string
 		withSession bool
 		allow       bool
 		wantCode    int
 	}{
-		{"no session", "/", false, true, http.StatusSeeOther},
-		{"invalid session", "/", false, true, http.StatusSeeOther},
-		{"valid session, not allowed", "/", true, false, http.StatusForbidden},
-		{"valid session, allowed", "/", true, true, http.StatusOK},
-		{"logout, no session", "/_oauth/logout", false, true, http.StatusUnauthorized},
-		{"logout, valid session", "/_oauth/logout", true, true, http.StatusOK},
+		{"no session", false, true, http.StatusSeeOther},
+		{"invalid session", false, true, http.StatusSeeOther},
+		{"valid session, not allowed", true, false, http.StatusForbidden},
+		{"valid session, allowed", true, true, http.StatusOK},
 	}
 
 	for _, tt := range tests {
@@ -42,16 +40,25 @@ func TestForwardAuthHandler(t *testing.T) {
 			var fAuthn fakeAuthenticator
 			fAuthz := fakeAuthorizer{allow: tt.allow}
 			mgr, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
-			h := AuthHandler(cookieName, ".example.com", mgr, &fAuthn, &fAuthz, slog.New(slog.DiscardHandler))
 
-			req := forwardAuthRequest(tt.target)
+			s := New(
+				configuration.ServerConfiguration{CookieName: cookieName, Domain: "example.com"},
+				mgr,
+				&fAuthn,
+				&fAuthz,
+				&fakeRedisClient{},
+				&fakeMetrics{},
+				slog.New(slog.DiscardHandler),
+			)
+
+			req := forwardAuthRequest("/")
 			if tt.withSession {
 				sessionID, err := mgr.Add(t.Context(), provider.UserInfo{Email: "foo@example.com"}, "")
 				require.NoError(t, err)
 				req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID})
 			}
 			resp := httptest.NewRecorder()
-			h.ServeHTTP(resp, req)
+			s.ServeHTTP(resp, req)
 			assert.Equal(t, tt.wantCode, resp.Code)
 		})
 	}
@@ -59,7 +66,7 @@ func TestForwardAuthHandler(t *testing.T) {
 
 func forwardAuthRequest(s string) *http.Request {
 	u, _ := url.Parse(s)
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/forwardauth", nil)
 	req.Header.Set("X-Forwarded-Uri", u.Path)
 	req.Header.Set("X-Forwarded-Proto", u.Scheme)
 	req.Header.Set("X-Forwarded-Host", u.Host)
@@ -107,9 +114,9 @@ func TestLoginHandler(t *testing.T) {
 			}
 			const cookieName = "test"
 			mgr, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
-			h := LoginHandler(cookieName, ".example.com", &fa, mgr, slog.New(slog.DiscardHandler))
+			h := loginHandler(cookieName, ".example.com", &fa, mgr, slog.New(slog.DiscardHandler))
 
-			req := httptest.NewRequest(http.MethodGet, "/login?"+tt.args.Encode(), nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/auth/login?"+tt.args.Encode(), nil)
 			resp := httptest.NewRecorder()
 			h.ServeHTTP(resp, req)
 			require.Equal(t, tt.want.code, resp.Code)
@@ -174,4 +181,22 @@ type fakeAuthorizer struct {
 
 func (f *fakeAuthorizer) Allow(_ *url.URL, _ string) bool {
 	return f.allow
+}
+
+var _ Metrics = (*fakeMetrics)(nil)
+
+type fakeMetrics struct{}
+
+func (f fakeMetrics) InstrumentedHandler(_ string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler { return next }
+}
+
+var _ RedisClient = fakeRedisClient{}
+
+type fakeRedisClient struct{ err error }
+
+func (f fakeRedisClient) Ping(ctx context.Context) *redis.StatusCmd {
+	cmd := redis.NewStatusCmd(ctx)
+	cmd.SetErr(f.err)
+	return cmd
 }

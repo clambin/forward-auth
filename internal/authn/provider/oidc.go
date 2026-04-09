@@ -32,9 +32,9 @@ func newOIDCAuthenticator(ctx context.Context, configuration OIDCConfiguration) 
 
 // AuthURL returns the login URL to redirect the user to.
 func (o *oidcAuthenticator) AuthURL(state string) string {
-	return o.config.AuthCodeURL(state)
-	// add this to always prompt the user to select their account (?)
+	// TODO: add option to always prompt the used to select an account:
 	//oauth2.SetAuthURLParam("prompt", "select_account"),
+	return o.config.AuthCodeURL(state)
 }
 
 // GetUserInfo completes the OIDC authentication flow and, if successful, returns the user info.
