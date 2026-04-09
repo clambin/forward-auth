@@ -7,6 +7,21 @@
     --text-color: #212529;
     --border-color: #dee2e6;
     --white: #ffffff;
+    --table-header-bg: #e9ecef;
+    --table-zebra-bg: rgba(0, 0, 0, 0.05);
+    --table-hover-bg: rgba(0, 0, 0, 0.075);
+    --header-color: #343a40;
+}
+
+.dark-mode {
+    --bg-color: #212529;
+    --text-color: #f8f9fa;
+    --border-color: #495057;
+    --white: #343a40;
+    --table-header-bg: #495057;
+    --table-zebra-bg: rgba(255, 255, 255, 0.05);
+    --table-hover-bg: rgba(255, 255, 255, 0.075);
+    --header-color: #f8f9fa;
 }
 
 body {
@@ -16,10 +31,11 @@ body {
     background-color: var(--bg-color);
     margin: 0;
     padding: 2rem;
+    transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 h1, h2 {
-    color: #343a40;
+    color: var(--header-color);
     margin-bottom: 1.5rem;
 }
 
@@ -75,17 +91,48 @@ h1, h2 {
 .table-base thead th {
     vertical-align: bottom;
     border-bottom: 2px solid var(--border-color);
-    background-color: #e9ecef;
+    background-color: var(--table-header-bg);
     text-align: left;
 }
 
 .table-zebra tbody tr:nth-of-type(odd) {
-    background-color: rgba(0, 0, 0, 0.05);
+    background-color: var(--table-zebra-bg);
 }
 
 .table-base tbody tr:hover {
-    background-color: rgba(0, 0, 0, 0.075);
+    background-color: var(--table-hover-bg);
 }
+
+.theme-toggle {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.5rem;
+    color: var(--text-color);
+    transition: color 0.3s ease;
+    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.theme-toggle:hover {
+    color: var(--primary-color);
+}
+
+.sun-icon, .moon-icon {
+    width: 24px;
+    height: 24px;
+}
+
+.sun-icon { display: none; }
+.moon-icon { display: block; }
+
+.dark-mode .sun-icon { display: block; }
+.dark-mode .moon-icon { display: none; }
 
 .session-select, #select-all {
     cursor: pointer;
