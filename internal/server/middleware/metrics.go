@@ -1,4 +1,4 @@
-package server
+package middleware
 
 import (
 	"context"
@@ -46,7 +46,7 @@ func (m Metrics) Collect(ch chan<- prometheus.Metric) {
 	m.duration.Collect(ch)
 }
 
-func (m Metrics) mw(handler string) func(http.Handler) http.Handler {
+func (m Metrics) InstrumentedHandler(handler string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return withHandlerInCtx(handler)(
 			instrumentedHandlerCounter(m.counter)(

@@ -1,5 +1,5 @@
 export async function listSessions() {
-    const r = await fetch('/api/v1/sessions/list');
+    const r = await fetch('/api/sessions/list');
     if (!r.ok) {
         throw new Error('Failed to fetch sessions');
     }
@@ -7,7 +7,7 @@ export async function listSessions() {
 }
 
 export async function deleteSession(id) {
-    const r = await fetch(`/api/v1/sessions/session/${id}`, {
+    const r = await fetch(`/api/sessions/session/${id}`, {
         method: 'DELETE',
     });
     if (!r.ok) {

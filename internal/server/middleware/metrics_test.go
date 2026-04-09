@@ -1,4 +1,4 @@
-package server
+package middleware
 
 import (
 	"net/http"
@@ -17,7 +17,7 @@ func TestMetrics(t *testing.T) {
 	r := prometheus.NewPedanticRegistry()
 	r.MustRegister(m)
 
-	h := m.mw("test")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := m.InstrumentedHandler("test")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 

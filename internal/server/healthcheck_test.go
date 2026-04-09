@@ -1,13 +1,11 @@
 package server
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -34,14 +32,4 @@ func TestHealthCheck(t *testing.T) {
 			assert.Equal(t, tt.want, resp.Code)
 		})
 	}
-}
-
-var _ RedisClient = fakeRedisClient{}
-
-type fakeRedisClient struct{ err error }
-
-func (f fakeRedisClient) Ping(ctx context.Context) *redis.StatusCmd {
-	cmd := redis.NewStatusCmd(ctx)
-	cmd.SetErr(f.err)
-	return cmd
 }

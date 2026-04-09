@@ -1,4 +1,4 @@
-package v1
+package server
 
 import (
 	"encoding/json"
@@ -23,8 +23,8 @@ func TestListSessionsHandler(t *testing.T) {
 		wantCode         int
 		wantSessionCount int
 	}{
-		{"valid", "/list", true, http.StatusOK, 1},
-		{"invalid", "/list", false, http.StatusUnauthorized, 0},
+		{"valid", "/api/sessions/list", true, http.StatusOK, 1},
+		{"invalid", "/api/sessions/list", false, http.StatusUnauthorized, 0},
 	}
 
 	for _, tt := range tests {
@@ -32,14 +32,23 @@ func TestListSessionsHandler(t *testing.T) {
 			sessionManager, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
 			sessionID, _ := sessionManager.Add(t.Context(), provider.UserInfo{Email: "foo@example.com"}, "")
 			const cookieName = "session"
-			m := routeSessions(cookieName, sessionManager, slog.New(slog.DiscardHandler))
+
+			s := New(
+				configuration.ServerConfiguration{CookieName: cookieName, Domain: "example.com"},
+				sessionManager,
+				nil,
+				nil,
+				&fakeRedisClient{},
+				&fakeMetrics{},
+				slog.New(slog.DiscardHandler),
+			)
 
 			req := httptest.NewRequest(http.MethodGet, tt.target, nil)
 			if tt.addCookie {
 				req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID})
 			}
 			resp := httptest.NewRecorder()
-			m.ServeHTTP(resp, req)
+			s.ServeHTTP(resp, req)
 			require.Equal(t, tt.wantCode, resp.Code)
 
 			if tt.wantCode != http.StatusOK {
@@ -64,20 +73,28 @@ func TestDeleteSessionHandler(t *testing.T) {
 		target   string
 		wantCode int
 	}{
-		{"success", "/session/" + sessionIDFoo, http.StatusNoContent},
-		{"unauthorized session", "/session/" + sessionIDBar, http.StatusForbidden},
-		{"invalid session", "/session/invalid", http.StatusNotFound},
+		{"success", "/api/sessions/session/" + sessionIDFoo, http.StatusNoContent},
+		{"unauthorized session", "/api/sessions/session/" + sessionIDBar, http.StatusForbidden},
+		{"invalid session", "/api/sessions/session/invalid", http.StatusNotFound},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			const cookieName = "session"
-			m := routeSessions(cookieName, sessionManager, slog.New(slog.DiscardHandler))
+			s := New(
+				configuration.ServerConfiguration{CookieName: cookieName, Domain: "example.com"},
+				sessionManager,
+				nil,
+				nil,
+				&fakeRedisClient{},
+				&fakeMetrics{},
+				slog.New(slog.DiscardHandler),
+			)
 
 			req := httptest.NewRequest(http.MethodDelete, tt.target, nil)
 			req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionIDFoo2})
 			resp := httptest.NewRecorder()
-			m.ServeHTTP(resp, req)
+			s.ServeHTTP(resp, req)
 			require.Equal(t, tt.wantCode, resp.Code)
 		})
 	}

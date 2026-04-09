@@ -1,4 +1,4 @@
-package v1
+package server
 
 import (
 	"cmp"
@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/clambin/forward-auth/internal/server/forwardauth"
 	"github.com/clambin/forward-auth/internal/sessions"
 )
 
@@ -21,8 +20,8 @@ const (
 // If the session is missing/invalid, the user is redirected to the OIDC login page.
 // If the session is valid, the user is authorized and the request is forwarded to the original destination.
 func forwardAuthHandler(
-	authenticator forwardauth.Authenticator,
-	authorizer forwardauth.Authorizer,
+	authenticator Authenticator,
+	authorizer Authorizer,
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +71,7 @@ func originalRequest(r *http.Request) (string, *url.URL) {
 	}
 }
 
-func redirectToLoginPage(w http.ResponseWriter, r *http.Request, authenticator forwardauth.Authenticator, logger *slog.Logger) {
+func redirectToLoginPage(w http.ResponseWriter, r *http.Request, authenticator Authenticator, logger *slog.Logger) {
 	redirectURL, err := authenticator.InitiateLogin(r.Context(), r.URL.String())
 	if err != nil {
 		logger.Warn("rejecting request: failed to redirect to login page", slog.Any("err", err))
@@ -88,8 +87,8 @@ func redirectToLoginPage(w http.ResponseWriter, r *http.Request, authenticator f
 func loginHandler(
 	cookieName string,
 	domain string,
-	authenticator forwardauth.Authenticator,
-	mgr forwardauth.SessionManager,
+	authenticator Authenticator,
+	mgr SessionManager,
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

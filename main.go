@@ -15,6 +15,7 @@ import (
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/server"
+	"github.com/clambin/forward-auth/internal/server/middleware"
 	"github.com/clambin/forward-auth/internal/sessions"
 	"github.com/goccy/go-yaml"
 	"github.com/prometheus/client_golang/prometheus"
@@ -68,7 +69,7 @@ func main() {
 
 	logger.Info("starting forward-auth", "version", version)
 
-	metrics := server.GetMetrics()
+	metrics := middleware.GetMetrics()
 	prometheus.MustRegister(metrics)
 
 	var g errgroup.Group

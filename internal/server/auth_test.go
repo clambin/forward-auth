@@ -1,4 +1,4 @@
-package v1
+package server
 
 import (
 	"context"
@@ -15,8 +15,8 @@ import (
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/configuration"
-	"github.com/clambin/forward-auth/internal/server/forwardauth"
 	"github.com/clambin/forward-auth/internal/sessions"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,7 +41,15 @@ func TestForwardAuthHandler(t *testing.T) {
 			fAuthz := fakeAuthorizer{allow: tt.allow}
 			mgr, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
 
-			m := routeAuth(cookieName, ".example.com", &fAuthn, &fAuthz, mgr, slog.New(slog.DiscardHandler))
+			s := New(
+				configuration.ServerConfiguration{CookieName: cookieName, Domain: "example.com"},
+				mgr,
+				&fAuthn,
+				&fAuthz,
+				&fakeRedisClient{},
+				&fakeMetrics{},
+				slog.New(slog.DiscardHandler),
+			)
 
 			req := forwardAuthRequest("/")
 			if tt.withSession {
@@ -50,7 +58,7 @@ func TestForwardAuthHandler(t *testing.T) {
 				req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID})
 			}
 			resp := httptest.NewRecorder()
-			m.ServeHTTP(resp, req)
+			s.ServeHTTP(resp, req)
 			assert.Equal(t, tt.wantCode, resp.Code)
 		})
 	}
@@ -58,7 +66,7 @@ func TestForwardAuthHandler(t *testing.T) {
 
 func forwardAuthRequest(s string) *http.Request {
 	u, _ := url.Parse(s)
-	req := httptest.NewRequest(http.MethodGet, "/forwardauth", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/forwardauth", nil)
 	req.Header.Set("X-Forwarded-Uri", u.Path)
 	req.Header.Set("X-Forwarded-Proto", u.Scheme)
 	req.Header.Set("X-Forwarded-Host", u.Host)
@@ -108,7 +116,7 @@ func TestLoginHandler(t *testing.T) {
 			mgr, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
 			h := loginHandler(cookieName, ".example.com", &fa, mgr, slog.New(slog.DiscardHandler))
 
-			req := httptest.NewRequest(http.MethodGet, "/login?"+tt.args.Encode(), nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/auth/login?"+tt.args.Encode(), nil)
 			resp := httptest.NewRecorder()
 			h.ServeHTTP(resp, req)
 			require.Equal(t, tt.want.code, resp.Code)
@@ -126,7 +134,7 @@ func TestLoginHandler(t *testing.T) {
 	}
 }
 
-var _ forwardauth.Authenticator = (*fakeAuthenticator)(nil)
+var _ Authenticator = (*fakeAuthenticator)(nil)
 
 type fakeAuthenticator struct {
 	states map[string]string
@@ -165,7 +173,7 @@ func (f *fakeAuthenticator) ConfirmLogin(_ context.Context, state, code string) 
 	return provider.UserInfo{Email: "foo@example.com"}, u, nil
 }
 
-var _ forwardauth.Authorizer = (*fakeAuthorizer)(nil)
+var _ Authorizer = (*fakeAuthorizer)(nil)
 
 type fakeAuthorizer struct {
 	allow bool
@@ -173,4 +181,22 @@ type fakeAuthorizer struct {
 
 func (f *fakeAuthorizer) Allow(_ *url.URL, _ string) bool {
 	return f.allow
+}
+
+var _ Metrics = (*fakeMetrics)(nil)
+
+type fakeMetrics struct{}
+
+func (f fakeMetrics) InstrumentedHandler(_ string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler { return next }
+}
+
+var _ RedisClient = fakeRedisClient{}
+
+type fakeRedisClient struct{ err error }
+
+func (f fakeRedisClient) Ping(ctx context.Context) *redis.StatusCmd {
+	cmd := redis.NewStatusCmd(ctx)
+	cmd.SetErr(f.err)
+	return cmd
 }
