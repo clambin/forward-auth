@@ -27,7 +27,9 @@ function populateSessions(sessions) {
         selectAllCheckbox.checked = false;
     }
 
-    Object.entries(sessions).forEach(([id, session]) => {
+    Object.entries(sessions)
+        .sort(([, a], [, b]) => new Date(b.last_seen) - new Date(a.last_seen))
+        .forEach(([id, session]) => {
         const row = (typeof document !== 'undefined' ? document : sessionTable.ownerDocument).createElement('tr');
         row.dataset.sessionId = id;
         const lastSeen = new Date(session.last_seen).toLocaleString();
