@@ -128,11 +128,11 @@ h1, h2 {
     height: 24px;
 }
 
-.sun-icon { display: none; }
-.moon-icon { display: block; }
+.sun-icon { display: block; }
+.moon-icon { display: none; }
 
-.dark-mode .sun-icon { display: block; }
-.dark-mode .moon-icon { display: none; }
+.dark-mode .sun-icon { display: none; }
+.dark-mode .moon-icon { display: block; }
 
 .session-select, #select-all {
     cursor: pointer;
