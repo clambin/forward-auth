@@ -45,11 +45,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	authorizer, err := authz.New(cfg.Authz.Rules)
-	if err != nil {
-		logger.Error("failed to create authorizer", "err", err)
-		os.Exit(1)
-	}
+	authorizer := authz.Authorizer{Rules: cfg.Authz.Rules, Groups: cfg.Authz.Groups}
 
 	sessionMgr, err := sessions.New(cfg.Session.SessionTTL, cfg.Storage)
 	if err != nil {
@@ -81,7 +77,7 @@ func main() {
 	g.Go(func() error {
 		return httputils.RunServer(ctx, &http.Server{
 			Addr:    cfg.Server.Addr,
-			Handler: server.New(cfg.Server, sessionMgr, authenticator, authorizer, redisClient, metrics, logger),
+			Handler: server.New(cfg.Server, sessionMgr, authenticator, &authorizer, redisClient, metrics, logger),
 		})
 	})
 	if err = g.Wait(); err != nil {

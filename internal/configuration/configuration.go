@@ -110,7 +110,8 @@ type AuthnConfiguration struct {
 }
 
 type AuthzConfiguration struct {
-	Rules []authz.Rule `yaml:"rules"`
+	Rules  []authz.Rule  `yaml:"rules"`
+	Groups []authz.Group `yaml:"groups"`
 }
 
 type StorageConfiguration struct {

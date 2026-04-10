@@ -36,7 +36,13 @@ func forwardAuthHandler(
 		// no valid session cookie found: redirect to login page
 		if !ok {
 			l.Warn("rejecting request: no valid session found")
-			redirectToLoginPage(w, r, authenticator, logger)
+			redirectURL, err := authenticator.InitiateLogin(r.Context(), u.String())
+			if err != nil {
+				l.Warn("failed to generate redirect URL", slog.Any("err", err))
+				http.Error(w, "failed to redirect to login page", http.StatusInternalServerError)
+				return
+			}
+			http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 			return
 		}
 
@@ -69,16 +75,6 @@ func originalRequest(r *http.Request) (string, *url.URL) {
 		Path:     path,
 		RawQuery: rawQuery,
 	}
-}
-
-func redirectToLoginPage(w http.ResponseWriter, r *http.Request, authenticator Authenticator, logger *slog.Logger) {
-	redirectURL, err := authenticator.InitiateLogin(r.Context(), r.URL.String())
-	if err != nil {
-		logger.Warn("rejecting request: failed to redirect to login page", slog.Any("err", err))
-		http.Error(w, "failed to redirect to login page", http.StatusInternalServerError)
-		return
-	}
-	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 
 // loginHandler is called by the OICD provider after the user has logged in.

@@ -20,9 +20,9 @@ func TestServer(t *testing.T) {
 	cfg := configuration.DefaultConfiguration
 	s, _ := sessions.New(5*time.Minute, cfg.Storage)
 	an, _ := authn.New(t.Context(), cfg)
-	az, _ := authz.New(cfg.Authz.Rules)
+	az := authz.Authorizer{Rules: cfg.Authz.Rules, Groups: cfg.Authz.Groups}
 
-	h := New(cfg.Server, s, an, az, nil, middleware.GetMetrics(), slog.New(slog.DiscardHandler))
+	h := New(cfg.Server, s, an, &az, nil, middleware.GetMetrics(), slog.New(slog.DiscardHandler))
 
 	// forward-auth
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/forwardauth", nil)

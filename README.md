@@ -208,10 +208,18 @@ authn:
 
 authz:
   # Authorization rules. A request is allowed if it matches at least one rule.
+  # If a rule contains both users and groups, the rule is allowed if the user matches either list.
   rules:
     - domain: "*.example.com"
       users:
         - "user@example.com"
+    - domain: "admin.example.com"
+      groups:
+        - "admins"
+  groups:
+    - name: admins
+      users:
+        - "admin@example.com"
 
 storage:
   # Session and CSRF state storage type. local or redis. Default: "local".
