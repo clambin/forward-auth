@@ -55,6 +55,14 @@ type Authorizer struct {
 	groupDefinitions map[string]map[string]struct{}
 }
 
+func (a *Authorizer) GroupsForUser(email string) []string {
+	groups := make([]string, 0, len(a.groupDefinitions[email]))
+	for group := range a.groupDefinitions[email] {
+		groups = append(groups, group)
+	}
+	return groups
+}
+
 func (a *Authorizer) Allow(u *url.URL, user string) bool {
 	// on first call, compile all rules
 	a.init.Do(a.compile)

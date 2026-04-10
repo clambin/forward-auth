@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,7 +13,9 @@ import (
 )
 
 const (
-	forwardedUserHeader = "X-Forwarded-User"
+	forwardedUserEmailHeader  = "X-Forwarded-User-Email"
+	forwardedUserNameHeader   = "X-Forwarded-User-Name"
+	forwardedUserGroupsHeader = "X-Forwarded-User-Groups"
 )
 
 // forwardAuthHandler is the main handler for the forward-auth middleware.
@@ -54,7 +57,14 @@ func forwardAuthHandler(
 		}
 
 		// valid session cookie found, request authorized: accept the request
-		w.Header().Set(forwardedUserHeader, session.UserInfo.Email)
+		w.Header().Set(forwardedUserEmailHeader, session.UserInfo.Email)
+		if name := session.UserInfo.Name; name != "" {
+			w.Header().Set(forwardedUserNameHeader, name)
+		}
+		if groups := authorizer.GroupsForUser(session.UserInfo.Email); len(groups) > 0 {
+			slices.Sort(groups)
+			w.Header().Set(forwardedUserGroupsHeader, strings.Join(groups, ","))
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 }

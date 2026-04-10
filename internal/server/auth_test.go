@@ -74,6 +74,54 @@ func forwardAuthRequest(s string) *http.Request {
 	return req
 }
 
+func TestForwardAuthHandler_Headers(t *testing.T) {
+	tests := []struct {
+		name   string
+		groups []string
+		want   map[string]string
+	}{
+		{"no groups", nil, map[string]string{
+			forwardedUserEmailHeader: "foo@example.com",
+			forwardedUserNameHeader:  "foo",
+		}},
+		{"groups", []string{"admin", "users"}, map[string]string{
+			forwardedUserEmailHeader:  "foo@example.com",
+			forwardedUserNameHeader:   "foo",
+			forwardedUserGroupsHeader: "admin,users",
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			const cookieName = "test"
+			var fAuthn fakeAuthenticator
+			fAuthz := fakeAuthorizer{allow: true, groups: tt.groups}
+			mgr, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
+
+			s := New(
+				configuration.ServerConfiguration{CookieName: cookieName, Domain: "example.com"},
+				mgr,
+				&fAuthn,
+				&fAuthz,
+				&fakeRedisClient{},
+				&fakeMetrics{},
+				slog.New(slog.DiscardHandler),
+			)
+
+			req := forwardAuthRequest("/")
+			sessionID, err := mgr.Add(t.Context(), provider.UserInfo{Name: "foo", Email: "foo@example.com"}, "")
+			require.NoError(t, err)
+			req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID})
+			resp := httptest.NewRecorder()
+			s.ServeHTTP(resp, req)
+			require.Equal(t, http.StatusOK, resp.Code)
+			for k, v := range tt.want {
+				require.Equal(t, v, resp.Header().Get(k), k)
+			}
+		})
+	}
+}
+
 func TestLoginHandler(t *testing.T) {
 	type want struct {
 		code     int
@@ -170,13 +218,18 @@ func (f *fakeAuthenticator) ConfirmLogin(_ context.Context, state, code string) 
 	if !ok {
 		return provider.UserInfo{}, "", errors.New("invalid state")
 	}
-	return provider.UserInfo{Email: "foo@example.com"}, u, nil
+	return provider.UserInfo{Name: "foo", Email: "foo@example.com"}, u, nil
 }
 
 var _ Authorizer = (*fakeAuthorizer)(nil)
 
 type fakeAuthorizer struct {
-	allow bool
+	allow  bool
+	groups []string
+}
+
+func (f *fakeAuthorizer) GroupsForUser(_ string) []string {
+	return f.groups
 }
 
 func (f *fakeAuthorizer) Allow(_ *url.URL, _ string) bool {

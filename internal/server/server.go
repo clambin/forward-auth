@@ -36,6 +36,7 @@ var _ Authenticator = (*authn.Authenticator)(nil)
 
 type Authorizer interface {
 	Allow(url *url.URL, user string) bool
+	GroupsForUser(email string) []string
 }
 
 var _ Authorizer = (*authz.Authorizer)(nil)

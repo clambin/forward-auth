@@ -253,7 +253,9 @@ spec:
     address: http://forward-auth:8080/api/auth/forwardauth
     trustForwardHeader: true
     authResponseHeaders:
-      - X-Forwarded-User
+      - X-Forwarded-User-Email
+      - X-Forwarded-User-Name
+      - X-Forwarded-User-Groups
 ```
 
 ---
