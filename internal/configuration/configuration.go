@@ -24,7 +24,7 @@ var DefaultConfiguration = Configuration{
 	},
 	Logger: LoggerConfiguration{
 		Level:  "info",
-		Format: "json",
+		Format: "text",
 	},
 	Prometheus: PrometheusConfiguration{
 		Addr: ":9120",
