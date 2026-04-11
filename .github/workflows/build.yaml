@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - main
-      - headers
+      - select-account
 permissions:
   contents: read
   packages: write

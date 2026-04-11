@@ -11,10 +11,11 @@ type Configuration struct {
 }
 
 type OIDCConfiguration struct {
-	ClientID     string `yaml:"client_id"`
-	ClientSecret string `yaml:"client_secret"`
-	RedirectURL  string `yaml:"redirect_url"`
-	IssuerURL    string `yaml:"issuer_url"`
+	ClientID      string `yaml:"client_id"`
+	ClientSecret  string `yaml:"client_secret"`
+	RedirectURL   string `yaml:"redirect_url"`
+	IssuerURL     string `yaml:"issuer_url"`
+	SelectAccount bool   `yaml:"select_account"`
 }
 
 // note: this works with Google's OIDC provider. May not work 100% with other providers.

@@ -3,7 +3,7 @@ on:
   push:
     branches-ignore:
       - main
-      - headers
+      - select-account
   workflow_call:
     secrets:
       codecov-token:

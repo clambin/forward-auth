@@ -205,6 +205,11 @@ authn:
     issuer_url: "https://accounts.google.com"
     # OIDC redirect URL: OIDC redirects to this URL after the user authenticates.
     redirect_url: https://auth.example.com/api/auth/login
+    # select_operator determines whether the user is prompted to select an account with the OIDC provider. 
+    # if true, the user is always prompted to select an account.
+    # if false, the user is not prompted if already logged in at the OIDC provider.
+    # Default: false.
+    select_operator: false
 
 authz:
   # Authorization rules. A request is allowed if it matches at least one rule.

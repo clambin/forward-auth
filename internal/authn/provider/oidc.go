@@ -10,14 +10,15 @@ import (
 
 // oidcAuthenticator handles the OIDC authentication flow.
 type oidcAuthenticator struct {
-	config   oauth2.Config
-	provider *oidc.Provider
+	config        oauth2.Config
+	provider      *oidc.Provider
+	selectAccount bool
 }
 
 // newOIDCAuthenticator creates a new oidcAuthenticator.
 func newOIDCAuthenticator(ctx context.Context, configuration OIDCConfiguration) (*oidcAuthenticator, error) {
-	var a oidcAuthenticator
 	var err error
+	a := oidcAuthenticator{selectAccount: configuration.SelectAccount}
 	if a.provider, err = oidc.NewProvider(ctx, configuration.IssuerURL); err != nil {
 		return nil, fmt.Errorf("oidc provider: %w", err)
 	}
@@ -33,9 +34,11 @@ func newOIDCAuthenticator(ctx context.Context, configuration OIDCConfiguration) 
 
 // AuthCodeURL returns the login URL to redirect the user to.
 func (o *oidcAuthenticator) AuthCodeURL(state string) string {
-	// TODO: add option to always prompt the used to select an account:
-	//oauth2.SetAuthURLParam("prompt", "select_account"),
-	return o.config.AuthCodeURL(state)
+	var opts []oauth2.AuthCodeOption
+	if o.selectAccount {
+		opts = append(opts, oauth2.SetAuthURLParam("prompt", "select_account"))
+	}
+	return o.config.AuthCodeURL(state, opts...)
 }
 
 // GetUserInfo completes the OIDC authentication flow and, if successful, returns the user info.

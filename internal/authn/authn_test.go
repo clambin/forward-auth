@@ -15,6 +15,7 @@ import (
 func TestSessions(t *testing.T) {
 	oidcServer, err := mockoidc.Run()
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = oidcServer.Shutdown() })
 
 	config := configuration.Configuration{
 		Authn: configuration.AuthnConfiguration{
