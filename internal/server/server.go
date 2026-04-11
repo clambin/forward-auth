@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"time"
 
 	"github.com/clambin/forward-auth/internal/authn"
 	"github.com/clambin/forward-auth/internal/authn/provider"
@@ -15,17 +14,6 @@ import (
 	"github.com/clambin/forward-auth/internal/sessions"
 	"github.com/redis/go-redis/v9"
 )
-
-type SessionManager interface {
-	Middleware(cookieName string, strict bool) func(http.Handler) http.Handler
-	Get(ctx context.Context, id string) (sessions.Session, error)
-	Add(ctx context.Context, userInfo provider.UserInfo, userAgent string) (string, error)
-	Delete(ctx context.Context, id string) error
-	TTL() time.Duration
-	List(ctx context.Context) (map[string]sessions.Session, error)
-}
-
-var _ SessionManager = (*sessions.Manager)(nil)
 
 type Authenticator interface {
 	InitiateLogin(ctx context.Context, url string) (string, error)
@@ -49,9 +37,10 @@ type RedisClient interface {
 	Ping(ctx context.Context) *redis.StatusCmd
 }
 
+// New returns a new http.Handler that serves all API endpoints and the web frontend.
 func New(
 	cfg configuration.ServerConfiguration,
-	sessionManager SessionManager,
+	sessionManager *sessions.Manager,
 	authenticator Authenticator,
 	authorizer Authorizer,
 	redisClient RedisClient,

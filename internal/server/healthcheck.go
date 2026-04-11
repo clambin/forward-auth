@@ -5,6 +5,7 @@ import (
 	"net/http"
 )
 
+// healthCheckHandler returns a healthCheck handler. If the Redis client is not nil, it pings the server.
 func healthCheckHandler(c RedisClient, logger *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if c == nil {

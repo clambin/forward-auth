@@ -28,13 +28,15 @@ type UserInfo struct {
 	EmailVerified bool   `json:"email_verified"`
 }
 
+// Provider is an interface for an authentication provider.
 type Provider interface {
-	AuthURL(string) string
+	AuthCodeURL(string) string
 	GetUserInfo(context.Context, string) (UserInfo, error)
 }
 
 var _ Provider = (*oidcAuthenticator)(nil)
 
+// New creates a new authentication provider for the provided configuration.
 func New(ctx context.Context, configuration Configuration) (Provider, error) {
 	switch configuration.Type {
 	case "google":

@@ -94,7 +94,7 @@ func loginHandler(
 	cookieName string,
 	domain string,
 	authenticator Authenticator,
-	mgr SessionManager,
+	mgr *sessions.Manager,
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

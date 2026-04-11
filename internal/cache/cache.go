@@ -18,13 +18,21 @@ var (
 	ErrNotFound = errors.New("not found")
 )
 
+// Cache is a generic cache interface, storing values of type T. The key type is always string.
 type Cache[T any] interface {
+	// Set adds a new item to the cache.
 	Set(ctx context.Context, id string, val T) error
-	Get(ctx context.Context, id string) (T, error)
-	Delete(ctx context.Context, id string) error
-	TTL() time.Duration
+	// Update updates an existing item in the cache without changing its expiration time.
 	Update(ctx context.Context, id string, val T) error
+	// List returns all non-expired items from the cache.
 	List(ctx context.Context) (map[string]T, error)
+	// Get returns an item from the cache, or ErrNotFound if an item does not exist.
+	Get(ctx context.Context, id string) (T, error)
+	// Delete removes an item from the cache. If the item does not exist, no error is returned,
+	// as the item may have expired naturally.
+	Delete(ctx context.Context, id string) error
+	// TTL returns the expiration time of the cache.
+	TTL() time.Duration
 }
 
 var (
@@ -32,6 +40,12 @@ var (
 	_ Cache[string] = (*redisCache[string])(nil)
 )
 
+// New creates a new cache for values of type T of the type specified in configuration.Type.
+// Supports an in-memory cache (type "local" or blank) and a Redis cache (type "redis").
+//
+// ttl specifies when items expire from the cache.
+// prefix is used to prefix the keys of the cache to prevent name collisions when the cache is shared across multiple services or instances.
+// Local caches ignore the prefix and should not be shared across services.
 func New[T any](ttl time.Duration, prefix string, configuration configuration.StorageConfiguration) (Cache[T], error) {
 	var c Cache[T]
 	switch configuration.Type {
@@ -125,7 +139,11 @@ func (c *redisCache[T]) Get(ctx context.Context, id string) (T, error) {
 }
 
 func (c *redisCache[T]) Delete(ctx context.Context, id string) error {
-	return c.client.Del(ctx, c.prefixedID(id)).Err()
+	err := c.client.Del(ctx, c.prefixedID(id)).Err()
+	if errors.Is(err, redis.Nil) {
+		err = nil
+	}
+	return err
 }
 
 func (c *redisCache[T]) TTL() time.Duration {

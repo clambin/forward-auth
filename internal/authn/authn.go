@@ -47,7 +47,7 @@ func (m *Authenticator) InitiateLogin(ctx context.Context, url string) (string, 
 	}
 
 	// return the login URL with the state as a query parameter
-	return m.provider.AuthURL(state), nil
+	return m.provider.AuthCodeURL(state), nil
 }
 
 // ConfirmLogin is called by the OIDC provider.  It verifies the state parameter to protect against CSRF attacks,

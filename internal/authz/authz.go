@@ -13,6 +13,7 @@ type Rule struct {
 	Groups []string `yaml:"groups"`
 }
 
+// match returns true if the rule matches the given URL and either users or groups match the authenticated user.
 func (r Rule) match(u *url.URL, user string, groupDefinitions map[string]map[string]struct{}) bool {
 	return r.matchDomain(u) && (r.matchUser(user) || r.matchGroup(user, groupDefinitions))
 }
@@ -48,21 +49,15 @@ type Group struct {
 	Users []string `yaml:"users"`
 }
 
+// Authorizer is responsible for authorizing requests based on rules and user/group definitions.
 type Authorizer struct {
-	init             sync.Once
+	groupDefinitions map[string]map[string]struct{}
 	Rules            []Rule
 	Groups           []Group
-	groupDefinitions map[string]map[string]struct{}
+	init             sync.Once
 }
 
-func (a *Authorizer) GroupsForUser(email string) []string {
-	groups := make([]string, 0, len(a.groupDefinitions[email]))
-	for group := range a.groupDefinitions[email] {
-		groups = append(groups, group)
-	}
-	return groups
-}
-
+// Allow returns true if a request for the given URL is allowed for the given authenticated user.
 func (a *Authorizer) Allow(u *url.URL, user string) bool {
 	// on first call, compile all rules
 	a.init.Do(a.compile)
@@ -75,6 +70,16 @@ func (a *Authorizer) Allow(u *url.URL, user string) bool {
 	return false
 }
 
+// GroupsForUser returns the groups that the given user belongs to.
+func (a *Authorizer) GroupsForUser(email string) []string {
+	groups := make([]string, 0, len(a.groupDefinitions[email]))
+	for group := range a.groupDefinitions[email] {
+		groups = append(groups, group)
+	}
+	return groups
+}
+
+// compile pre-compiles all rules and group definitions to optimize authorization performance.
 func (a *Authorizer) compile() {
 	// normalize all rules: convert static date to lowercase to optimize case-insensitive comparisons
 	for i := range a.Rules {
@@ -88,7 +93,7 @@ func (a *Authorizer) compile() {
 	}
 	// build group definitions to optimize user-to-group lookups
 	// rule needs to know: does this user belong to this group?
-	// build a map of users to map of groups
+	// build a map of users to maps of groups
 	a.groupDefinitions = make(map[string]map[string]struct{})
 	for _, g := range a.Groups {
 		g.Name = strings.ToLower(g.Name)

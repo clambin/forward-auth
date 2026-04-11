@@ -27,7 +27,7 @@ func TestOIDCAuthenticator(t *testing.T) {
 	a, err := New(ctx, config)
 	require.NoError(t, err)
 
-	loginURL := a.AuthURL("https://example.com")
+	loginURL := a.AuthCodeURL("https://example.com")
 	require.NotZero(t, loginURL)
 
 	_, err = a.GetUserInfo(ctx, "invalid-code")
@@ -42,7 +42,7 @@ func TestOIDCAuthenticator(t *testing.T) {
 	require.NoError(t, err)
 	code := session.SessionID
 
-	loginURL = a.AuthURL("https://example.com")
+	loginURL = a.AuthCodeURL("https://example.com")
 	parsedURL, err := url.Parse(loginURL)
 	require.NoError(t, err)
 	state := parsedURL.Query().Get("state")

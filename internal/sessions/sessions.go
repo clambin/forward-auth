@@ -17,16 +17,22 @@ const (
 	sessionKeyPrefix = "forward-auth-session"
 )
 
+// Session represents a user session.
 type Session struct {
 	LastSeen  time.Time         `json:"last_seen"`
 	UserAgent string            `json:"user_agent"`
 	UserInfo  provider.UserInfo `json:"user_info"`
 }
 
+// Manager manages user sessions.
+// Most of the methods are implemented by the underlying cache.Cache interface.
 type Manager struct {
 	cache.Cache[Session]
 }
 
+// New create a new session Manager for the given configuration.
+// ttl defines when sessions expire.
+// cfg defines the storage configuration (i.e., local or Redis).
 func New(ttl time.Duration, cfg configuration.StorageConfiguration) (*Manager, error) {
 	store, err := cache.New[Session](ttl, sessionKeyPrefix, cfg)
 	if err != nil {
@@ -35,6 +41,7 @@ func New(ttl time.Duration, cfg configuration.StorageConfiguration) (*Manager, e
 	return &Manager{Cache: store}, nil
 }
 
+// Add creates a new session for the given user info.
 func (m *Manager) Add(ctx context.Context, userInfo provider.UserInfo, userAgent string) (string, error) {
 	sessionID := makeRandomSessionID()
 	session := Session{
@@ -54,6 +61,10 @@ func makeRandomSessionID() string {
 	return hex.EncodeToString(b[:])
 }
 
+// Middleware returns a middleware that validates the session cookie in the HTTP request.
+// In strict mode, the middleware rejects the request if the session cookie is missing or invalid.
+// If the request is allowed, the middleware adds the session (which may be invalid in non-strict mode)
+// to the request context and forwards the request to the next handler.
 func (m *Manager) Middleware(cookieName string, strict bool) func(handler http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -63,6 +74,7 @@ func (m *Manager) Middleware(cookieName string, strict bool) func(handler http.H
 				return
 			}
 			if err == nil {
+				// update the session's lastSeen and userAgent fields without affecting expiration.
 				session.LastSeen = time.Now()
 				session.UserAgent = r.UserAgent()
 				if err = m.Update(r.Context(), sessionID, session); err != nil {
@@ -95,11 +107,14 @@ type sessionInfo struct {
 	session   Session
 }
 
+// SessionFromCtx returns the session ID and session data from the request context, if present.
+// Otherwise, the third return value is false.
 func SessionFromCtx(ctx context.Context) (string, Session, bool) {
 	s, ok := ctx.Value(sessionCtxKey{}).(sessionInfo)
 	return s.sessionID, s.session, ok
 }
 
+// ctxWithSession returns a new context with the given session ID and session data.
 func ctxWithSession(ctx context.Context, sessionID string, session Session) context.Context {
 	return context.WithValue(ctx, sessionCtxKey{}, sessionInfo{sessionID: sessionID, session: session})
 }

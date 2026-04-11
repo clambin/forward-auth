@@ -71,7 +71,7 @@ func main() {
 	var g errgroup.Group
 	// Prometheus
 	g.Go(func() error {
-		return cfg.Prometheus.RunServer(ctx, nil)
+		return cfg.Prometheus.RunServer(ctx)
 	})
 	// forward-auth
 	g.Go(func() error {

@@ -1,6 +1,7 @@
 package configuration
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -13,7 +14,6 @@ import (
 	"codeberg.org/clambin/go-common/httputils"
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/authz"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -61,6 +61,7 @@ type LoggerConfiguration struct {
 	Format string `yaml:"format"`
 }
 
+// Logger returns a logger configured with the given configuration.
 func (c LoggerConfiguration) Logger(w io.Writer) *slog.Logger {
 	var level slog.Level
 	err := level.UnmarshalText([]byte(c.Level))
@@ -93,14 +94,14 @@ type PrometheusConfiguration struct {
 	Path string `yaml:"path"`
 }
 
-func (c PrometheusConfiguration) RunServer(ctx context.Context, g prometheus.Gatherer) error {
-	h := promhttp.Handler()
-	if g != nil {
-		h = promhttp.HandlerFor(g, promhttp.HandlerOpts{})
-	}
+// RunServer runs a prometheus server on the given address.
+// The server is shut down when the context is canceled.
+func (c PrometheusConfiguration) RunServer(ctx context.Context) error {
+	mux := http.NewServeMux()
+	mux.Handle(cmp.Or(c.Path, "/metrics"), promhttp.Handler())
 	return httputils.RunServer(ctx, &http.Server{
 		Addr:    c.Addr,
-		Handler: h,
+		Handler: mux,
 	})
 }
 

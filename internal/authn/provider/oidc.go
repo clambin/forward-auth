@@ -14,6 +14,7 @@ type oidcAuthenticator struct {
 	provider *oidc.Provider
 }
 
+// newOIDCAuthenticator creates a new oidcAuthenticator.
 func newOIDCAuthenticator(ctx context.Context, configuration OIDCConfiguration) (*oidcAuthenticator, error) {
 	var a oidcAuthenticator
 	var err error
@@ -30,8 +31,8 @@ func newOIDCAuthenticator(ctx context.Context, configuration OIDCConfiguration) 
 	return &a, nil
 }
 
-// AuthURL returns the login URL to redirect the user to.
-func (o *oidcAuthenticator) AuthURL(state string) string {
+// AuthCodeURL returns the login URL to redirect the user to.
+func (o *oidcAuthenticator) AuthCodeURL(state string) string {
 	// TODO: add option to always prompt the used to select an account:
 	//oauth2.SetAuthURLParam("prompt", "select_account"),
 	return o.config.AuthCodeURL(state)

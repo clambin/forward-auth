@@ -12,7 +12,7 @@ import (
 )
 
 // getSessionsHandler returns a list of all sessions for the user.
-func getSessionsHandler(sessionManager SessionManager, _ *slog.Logger) http.Handler {
+func getSessionsHandler(sessionManager *sessions.Manager, _ *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// session validation runs in strict mode, so handler is only called if the session is valid
 		_, session, _ := sessions.SessionFromCtx(r.Context())
@@ -34,7 +34,7 @@ func getSessionsHandler(sessionManager SessionManager, _ *slog.Logger) http.Hand
 }
 
 // deleteSessionHandler deletes a session. If the requested session does not belong to the user, the request is rejected.
-func deleteSessionHandler(sessionManager SessionManager, logger *slog.Logger) http.Handler {
+func deleteSessionHandler(sessionManager *sessions.Manager, logger *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// session validation runs in struct mode, so this is only called if the session is valid
 		_, mySession, _ := sessions.SessionFromCtx(r.Context())
