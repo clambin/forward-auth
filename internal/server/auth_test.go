@@ -75,20 +75,20 @@ func forwardAuthRequest(s string) *http.Request {
 }
 
 func TestForwardAuthHandler_Headers(t *testing.T) {
-	tests := []struct {
+	type wantedHeaders struct {
 		name   string
-		groups []string
-		want   map[string]string
+		email  string
+		groups string
+	}
+	tests := []struct {
+		name     string
+		groups   []string
+		userInfo provider.UserInfo
+		want     wantedHeaders
 	}{
-		{"no groups", nil, map[string]string{
-			forwardedUserEmailHeader: "foo@example.com",
-			forwardedUserNameHeader:  "foo",
-		}},
-		{"groups", []string{"admin", "users"}, map[string]string{
-			forwardedUserEmailHeader:  "foo@example.com",
-			forwardedUserNameHeader:   "foo",
-			forwardedUserGroupsHeader: "admin,users",
-		}},
+		{"no groups", nil, provider.UserInfo{Name: "foo", Email: "foo@example.com"}, wantedHeaders{"foo", "foo@example.com", ""}},
+		{"groups", []string{"admin", "users"}, provider.UserInfo{Name: "foo", Email: "foo@example.com"}, wantedHeaders{"foo", "foo@example.com", "admin,users"}},
+		{"no name", nil, provider.UserInfo{Email: "foo@example.com"}, wantedHeaders{"", "foo@example.com", ""}},
 	}
 
 	for _, tt := range tests {
@@ -109,16 +109,54 @@ func TestForwardAuthHandler_Headers(t *testing.T) {
 			)
 
 			req := forwardAuthRequest("/")
-			sessionID, err := mgr.Add(t.Context(), provider.UserInfo{Name: "foo", Email: "foo@example.com"}, "")
+			sessionID, err := mgr.Add(t.Context(), tt.userInfo, "")
 			require.NoError(t, err)
 			req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID})
 			resp := httptest.NewRecorder()
 			s.ServeHTTP(resp, req)
 			require.Equal(t, http.StatusOK, resp.Code)
-			for k, v := range tt.want {
-				require.Equal(t, v, resp.Header().Get(k), k)
-			}
+
+			require.Equal(t, tt.want.name, resp.Header().Get(forwardedUserNameHeader))
+			require.Equal(t, tt.want.email, resp.Header().Get(forwardedUserEmailHeader))
+			require.Equal(t, tt.want.groups, resp.Header().Get(forwardedUserGroupsHeader))
 		})
+	}
+}
+
+// Current:
+// BenchmarkForwardAuthHandler-10    	    9320	    127073 ns/op	  336803 B/op	    2300 allocs/op
+func BenchmarkForwardAuthHandler(b *testing.B) {
+	const cookieName = "test"
+	var fAuthn fakeAuthenticator
+	fAuthz := fakeAuthorizer{allow: true}
+	mgr, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
+
+	s := New(
+		configuration.ServerConfiguration{CookieName: cookieName, Domain: ".example.com"},
+		mgr,
+		&fAuthn,
+		&fAuthz,
+		&fakeRedisClient{},
+		&fakeMetrics{},
+		slog.New(slog.DiscardHandler),
+	)
+
+	sessionID, err := mgr.Add(b.Context(), provider.UserInfo{Email: "foo@example.com"}, "")
+	require.NoError(b, err)
+	cookie := http.Cookie{Name: cookieName, Value: sessionID}
+	req := forwardAuthRequest("/")
+	req.AddCookie(&cookie)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		for range 100 {
+			resp := httptest.NewRecorder()
+			s.ServeHTTP(resp, req.Clone(b.Context()))
+			if resp.Code != http.StatusOK {
+				b.Fatal("should be OK")
+			}
+		}
 	}
 }
 

@@ -31,17 +31,15 @@ func forwardAuthHandler(
 		// restore the original request method and URL
 		_, u := originalRequest(r)
 
-		l := logger.With(slog.String("url", u.String()))
-
 		// get the session added by the session validator middleware
 		_, session, ok := sessions.SessionFromCtx(r.Context())
 
 		// no valid session cookie found: redirect to login page
 		if !ok {
-			l.Warn("rejecting request: no valid session found")
+			logger.Warn("rejecting request: no valid session found", slog.String("url", u.String()))
 			redirectURL, err := authenticator.InitiateLogin(r.Context(), u.String())
 			if err != nil {
-				l.Warn("failed to generate redirect URL", slog.Any("err", err))
+				logger.Warn("failed to generate redirect URL", slog.Any("err", err))
 				http.Error(w, "failed to redirect to login page", http.StatusInternalServerError)
 				return
 			}
@@ -51,7 +49,10 @@ func forwardAuthHandler(
 
 		// session is valid. check if the user is authorized to access the requested resource
 		if !authorizer.Allow(u, session.UserInfo.Email) {
-			l.Warn("rejecting request: user is not authorized to access the requested resource")
+			logger.Warn("rejecting request: user is not authorized to access the requested resource",
+				slog.String("url", u.String()),
+				slog.String("user", session.UserInfo.Email),
+			)
 			http.Error(w, "user is not authorized to access the requested resource", http.StatusForbidden)
 			return
 		}
@@ -81,7 +82,7 @@ func originalRequest(r *http.Request) (string, *url.URL) {
 
 	return cmp.Or(r.Header.Get("X-Forwarded-Method"), http.MethodGet), &url.URL{
 		Scheme:   cmp.Or(r.Header.Get("X-Forwarded-Proto"), "https"),
-		Host:     cmp.Or(r.Header.Get("X-Forwarded-Host"), ""),
+		Host:     r.Header.Get("X-Forwarded-Host"),
 		Path:     path,
 		RawQuery: rawQuery,
 	}

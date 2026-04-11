@@ -11,7 +11,7 @@ import (
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 )
 
-func TestBackEnd(t *testing.T) {
+func TestCache(t *testing.T) {
 	ctx := t.Context()
 	c, err := tcredis.Run(ctx, "redis:latest")
 	require.NoError(t, err)
