@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/sessions"
 )
 
@@ -58,14 +59,7 @@ func forwardAuthHandler(
 		}
 
 		// valid session cookie found, request authorized: accept the request
-		w.Header().Set(forwardedUserEmailHeader, session.UserInfo.Email)
-		if name := session.UserInfo.Name; name != "" {
-			w.Header().Set(forwardedUserNameHeader, name)
-		}
-		if groups := authorizer.GroupsForUser(session.UserInfo.Email); len(groups) > 0 {
-			slices.Sort(groups)
-			w.Header().Set(forwardedUserGroupsHeader, strings.Join(groups, ","))
-		}
+		setUserHeaders(w, session.UserInfo, authorizer.GroupsForUser(session.UserInfo.Email))
 		w.WriteHeader(http.StatusOK)
 	})
 }
@@ -85,6 +79,19 @@ func originalRequest(r *http.Request) (string, *url.URL) {
 		Host:     r.Header.Get("X-Forwarded-Host"),
 		Path:     path,
 		RawQuery: rawQuery,
+	}
+}
+
+// setUserHeaders sets the user headers on the response. Blank headers are not set.
+func setUserHeaders(w http.ResponseWriter, user provider.UserInfo, groups []string) {
+	h := w.Header()
+	h.Set(forwardedUserEmailHeader, user.Email)
+	if user.Name != "" {
+		h.Set(forwardedUserNameHeader, user.Name)
+	}
+	if len(groups) > 0 {
+		slices.Sort(groups)
+		w.Header().Set(forwardedUserGroupsHeader, strings.Join(groups, ","))
 	}
 }
 
@@ -108,17 +115,22 @@ func loginHandler(
 			return
 		}
 
+		logger.Debug("received valid login request")
+
 		userInfo, redirectURL, err := authenticator.ConfirmLogin(r.Context(), state, code)
 		if err != nil {
-			logger.Warn("rejecting login request: failed to validate login", "err", err)
+			logger.Warn("rejecting login request: failed to validate login", slog.Any("err", err))
 			http.Error(w, "failed to validate login", http.StatusUnauthorized)
 			return
 		}
 
+		ulog := logger.With(slog.String("user", userInfo.Email))
+		ulog.Debug("user validated successfully")
+
 		// create a session in the session cache
 		sessionID, err := mgr.Add(r.Context(), userInfo, r.UserAgent())
 		if err != nil {
-			logger.Warn("rejecting login request: failed to create session", "err", err)
+			ulog.Warn("rejecting login request: failed to create session", slog.Any("err", err))
 			http.Error(w, "failed to create session", http.StatusInternalServerError)
 			return
 		}
@@ -134,6 +146,6 @@ func loginHandler(
 			SameSite: http.SameSiteLaxMode,
 		})
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
-		logger.Info("login successful", "user", userInfo.Email)
+		ulog.Info("login successful")
 	})
 }
