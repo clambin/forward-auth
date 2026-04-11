@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -70,11 +71,12 @@ func (c *localCache[T]) Update(_ context.Context, id string, val T) error {
 }
 
 func (c *localCache[T]) Get(_ context.Context, id string) (T, error) {
-	if value, ok := c.cache.Get(id); ok {
-		return value, nil
+	var err error
+	value, ok := c.cache.Get(id)
+	if !ok {
+		err = ErrNotFound
 	}
-	var zero T
-	return zero, ErrNotFound
+	return value, err
 }
 
 func (c *localCache[T]) Delete(_ context.Context, id string) error {
@@ -87,11 +89,7 @@ func (c *localCache[T]) TTL() time.Duration {
 }
 
 func (c *localCache[T]) List(_ context.Context) (map[string]T, error) {
-	items := make(map[string]T)
-	for k, v := range c.cache.Iterate() {
-		items[k] = v
-	}
-	return items, nil
+	return maps.Collect(c.cache.Iterate()), nil
 }
 
 type redisCache[T any] struct {
@@ -137,14 +135,16 @@ func (c *redisCache[T]) TTL() time.Duration {
 func (c *redisCache[T]) List(ctx context.Context) (map[string]T, error) {
 	keys, err := c.client.Keys(ctx, c.prefixedID("*")).Result()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("redis keys: %w", err)
 	}
 	items := make(map[string]T, len(keys))
 	for _, key := range keys {
 		id := c.unprefixedKey(key)
-		if v, err := c.Get(ctx, id); err == nil {
-			items[id] = v
+		v, err := c.Get(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("redis get: %w", err)
 		}
+		items[id] = v
 	}
 	return items, nil
 }

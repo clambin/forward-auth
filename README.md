@@ -118,7 +118,7 @@ The system combines **Traefik forwardAuth**, **OIDC authentication**, and **sess
 - Returns:
     - ✅ `2xx` → allow request
     - ❌ `303` → redirect to login
-    - ❌ `401` → unauthorized
+    - ❌ `403` → forbidden
 
 #### Login Endpoint
 
@@ -142,7 +142,7 @@ The system combines **Traefik forwardAuth**, **OIDC authentication**, and **sess
 #### Protected application(s)
 
 - Protected by `forwardAuth` middleware
-- Authenticated user accessible via `X-Forwarded-User` header (email address)
+- Authenticated user accessible via `X-Forwarded-User-*` headers (email address, name, groups)
 
 ---
 
