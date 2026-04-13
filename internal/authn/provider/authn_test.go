@@ -37,7 +37,7 @@ func TestOIDCAuthenticator(t *testing.T) {
 		Email:         "foo@example.com",
 		EmailVerified: true,
 	}
-	session, err := s.SessionStore.NewSession("oidc profile email", "", &u, "", "")
+	session, err := s.SessionStore.NewSession("openid profile email", "", &u, "", "")
 	require.NoError(t, err)
 	code := session.SessionID
 

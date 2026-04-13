@@ -21,7 +21,7 @@ const (
 type Session struct {
 	LastSeen  time.Time         `json:"last_seen"`
 	UserAgent string            `json:"user_agent"`
-	UserInfo  provider.UserInfo `json:"user_info"`
+	UserInfo  provider.Identity `json:"user_info"`
 }
 
 // Manager manages user sessions.
@@ -42,7 +42,7 @@ func New(ttl time.Duration, cfg configuration.StorageConfiguration) (*Manager, e
 }
 
 // Add creates a new session for the given user info.
-func (m *Manager) Add(ctx context.Context, userInfo provider.UserInfo, userAgent string) (string, error) {
+func (m *Manager) Add(ctx context.Context, userInfo provider.Identity, userAgent string) (string, error) {
 	sessionID := makeRandomSessionID()
 	session := Session{
 		UserInfo:  userInfo,

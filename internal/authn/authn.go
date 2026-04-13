@@ -52,16 +52,16 @@ func (m *Authenticator) InitiateLogin(ctx context.Context, url string) (string, 
 
 // ConfirmLogin is called by the OIDC provider.  It verifies the state parameter to protect against CSRF attacks,
 // uses the code to get the user info, and creates a session in the session cache.
-func (m *Authenticator) ConfirmLogin(ctx context.Context, state string, code string) (provider.UserInfo, string, error) {
+func (m *Authenticator) ConfirmLogin(ctx context.Context, state string, code string) (provider.Identity, string, error) {
 	// retrieve the state from the state cache
 	u, err := m.states.Validate(ctx, state)
 	if err != nil {
-		return provider.UserInfo{}, "", fmt.Errorf("state: %w", err)
+		return provider.Identity{}, "", fmt.Errorf("state: %w", err)
 	}
 	// use the code to get the user info
 	userInfo, err := m.provider.GetUserInfo(ctx, code)
 	if err != nil {
-		return provider.UserInfo{}, "", fmt.Errorf("confirm login: %w", err)
+		return provider.Identity{}, "", fmt.Errorf("confirm login: %w", err)
 	}
 	return userInfo, u, nil
 }

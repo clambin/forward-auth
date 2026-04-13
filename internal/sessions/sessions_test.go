@@ -23,7 +23,7 @@ func TestSessions(t *testing.T) {
 	require.ErrorIs(t, err, cache.ErrNotFound)
 
 	// add a session
-	id, err := m.Add(ctx, provider.UserInfo{Email: "foo@example.com"}, "")
+	id, err := m.Add(ctx, provider.Identity{Email: "foo@example.com"}, "")
 	require.NoError(t, err)
 	assert.NotZero(t, id)
 
@@ -76,7 +76,7 @@ func TestSessions_Middleware(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			if tt.setCookie {
-				id, _ := m.Add(t.Context(), provider.UserInfo{Email: "foo@example.com"}, "")
+				id, _ := m.Add(t.Context(), provider.Identity{Email: "foo@example.com"}, "")
 				req.AddCookie(&http.Cookie{Name: cookieName, Value: id})
 			}
 			resp := httptest.NewRecorder()

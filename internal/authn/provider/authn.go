@@ -20,7 +20,8 @@ type OIDCConfiguration struct {
 
 // note: this works with Google's OIDC provider. May not work 100% with other providers.
 
-type UserInfo struct {
+type Identity struct {
+	Subject       string `json:"sub"`
 	Email         string `json:"email"`
 	Name          string `json:"name"`
 	GivenName     string `json:"given_name"`
@@ -32,7 +33,7 @@ type UserInfo struct {
 // Provider is an interface for an authentication provider.
 type Provider interface {
 	AuthCodeURL(string) string
-	GetUserInfo(context.Context, string) (UserInfo, error)
+	GetUserInfo(context.Context, string) (Identity, error)
 }
 
 var _ Provider = (*oidcAuthenticator)(nil)

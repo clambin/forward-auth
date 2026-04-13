@@ -83,7 +83,7 @@ func originalRequest(r *http.Request) (string, *url.URL) {
 }
 
 // setUserHeaders sets the user headers on the response. Blank headers are not set.
-func setUserHeaders(w http.ResponseWriter, user provider.UserInfo, groups []string) {
+func setUserHeaders(w http.ResponseWriter, user provider.Identity, groups []string) {
 	h := w.Header()
 	h.Set(forwardedUserEmailHeader, user.Email)
 	if user.Name != "" {

@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - main
-      - select-account
+      - github
 permissions:
   contents: read
   packages: write

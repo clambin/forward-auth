@@ -30,7 +30,7 @@ func TestListSessionsHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sessionManager, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
-			sessionID, _ := sessionManager.Add(t.Context(), provider.UserInfo{Email: "foo@example.com"}, "")
+			sessionID, _ := sessionManager.Add(t.Context(), provider.Identity{Email: "foo@example.com"}, "")
 			const cookieName = "session"
 
 			s := New(
@@ -64,9 +64,9 @@ func TestListSessionsHandler(t *testing.T) {
 
 func TestDeleteSessionHandler(t *testing.T) {
 	sessionManager, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
-	sessionIDFoo, _ := sessionManager.Add(t.Context(), provider.UserInfo{Email: "foo@example.com"}, "")
-	sessionIDFoo2, _ := sessionManager.Add(t.Context(), provider.UserInfo{Email: "foo@example.com"}, "")
-	sessionIDBar, _ := sessionManager.Add(t.Context(), provider.UserInfo{Email: "bar@example.com"}, "")
+	sessionIDFoo, _ := sessionManager.Add(t.Context(), provider.Identity{Email: "foo@example.com"}, "")
+	sessionIDFoo2, _ := sessionManager.Add(t.Context(), provider.Identity{Email: "foo@example.com"}, "")
+	sessionIDBar, _ := sessionManager.Add(t.Context(), provider.Identity{Email: "bar@example.com"}, "")
 
 	tests := []struct {
 		name     string
