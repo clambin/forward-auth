@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSessions(t *testing.T) {
+func TestAuthenticator(t *testing.T) {
 	oidcServer, err := mockoidc.Run()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = oidcServer.Shutdown() })

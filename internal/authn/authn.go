@@ -9,6 +9,7 @@ import (
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/cache"
 	"github.com/clambin/forward-auth/internal/configuration"
+	"golang.org/x/oauth2"
 )
 
 const (
@@ -17,8 +18,9 @@ const (
 
 // Authenticator authenticates users and manages user sessions.
 type Authenticator struct {
-	states   states
-	provider provider.Provider
+	states        states
+	provider      provider.Provider
+	selectAccount bool
 }
 
 // New creates a new Authenticator.
@@ -33,6 +35,7 @@ func New(ctx context.Context, configuration configuration.Configuration) (*Authe
 	if err != nil {
 		return nil, fmt.Errorf("authenticator: %w", err)
 	}
+	mgr.selectAccount = configuration.Authn.Provider.SelectAccount
 	return &mgr, nil
 }
 
@@ -46,8 +49,12 @@ func (m *Authenticator) InitiateLogin(ctx context.Context, url string) (string, 
 		return "", fmt.Errorf("state: %w", err)
 	}
 
+	var opts []oauth2.AuthCodeOption
+	if m.selectAccount {
+		opts = append(opts, oauth2.SetAuthURLParam("prompt", "select_account"))
+	}
 	// return the login URL with the state as a query parameter
-	return m.provider.AuthCodeURL(state), nil
+	return m.provider.AuthCodeURL(state, opts...), nil
 }
 
 // ConfirmLogin is called by the OIDC provider.  It verifies the state parameter to protect against CSRF attacks,
@@ -58,8 +65,13 @@ func (m *Authenticator) ConfirmLogin(ctx context.Context, state string, code str
 	if err != nil {
 		return provider.Identity{}, "", fmt.Errorf("state: %w", err)
 	}
-	// use the code to get the user info
-	userInfo, err := m.provider.GetUserInfo(ctx, code)
+	// use the code to get a token
+	token, err := m.provider.Exchange(ctx, code)
+	if err != nil {
+		return provider.Identity{}, "", fmt.Errorf("token: %w", err)
+	}
+	// use the token to get the user info
+	userInfo, err := m.provider.GetUserInfo(ctx, token)
 	if err != nil {
 		return provider.Identity{}, "", fmt.Errorf("confirm login: %w", err)
 	}
