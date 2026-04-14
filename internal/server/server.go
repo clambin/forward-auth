@@ -17,7 +17,7 @@ import (
 
 type Authenticator interface {
 	InitiateLogin(ctx context.Context, url string) (string, error)
-	ConfirmLogin(ctx context.Context, state, code string) (provider.UserInfo, string, error)
+	ConfirmLogin(ctx context.Context, state, code string) (provider.Identity, string, error)
 }
 
 var _ Authenticator = (*authn.Authenticator)(nil)

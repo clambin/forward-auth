@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSessions(t *testing.T) {
+func TestAuthenticator(t *testing.T) {
 	oidcServer, err := mockoidc.Run()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = oidcServer.Shutdown() })
@@ -21,13 +21,11 @@ func TestSessions(t *testing.T) {
 		Authn: configuration.AuthnConfiguration{
 			StateTTL: 5 * time.Minute,
 			Provider: provider.Configuration{
-				Type: "oidc",
-				OIDC: provider.OIDCConfiguration{
-					ClientID:     oidcServer.Config().ClientID,
-					ClientSecret: oidcServer.Config().ClientSecret,
-					RedirectURL:  "https://auth.example.com",
-					IssuerURL:    oidcServer.Issuer(),
-				},
+				Type:         "oidc",
+				ClientID:     oidcServer.Config().ClientID,
+				ClientSecret: oidcServer.Config().ClientSecret,
+				RedirectURL:  "https://auth.example.com",
+				IssuerURL:    oidcServer.Issuer(),
 			},
 		},
 	}

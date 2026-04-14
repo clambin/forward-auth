@@ -53,7 +53,7 @@ func TestForwardAuthHandler(t *testing.T) {
 
 			req := forwardAuthRequest("/")
 			if tt.withSession {
-				sessionID, err := mgr.Add(t.Context(), provider.UserInfo{Email: "foo@example.com"}, "")
+				sessionID, err := mgr.Add(t.Context(), provider.Identity{Email: "foo@example.com"}, "")
 				require.NoError(t, err)
 				req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID})
 			}
@@ -83,12 +83,12 @@ func TestForwardAuthHandler_Headers(t *testing.T) {
 	tests := []struct {
 		name     string
 		groups   []string
-		userInfo provider.UserInfo
+		userInfo provider.Identity
 		want     wantedHeaders
 	}{
-		{"no groups", nil, provider.UserInfo{Name: "foo", Email: "foo@example.com"}, wantedHeaders{"foo", "foo@example.com", ""}},
-		{"groups", []string{"admin", "users"}, provider.UserInfo{Name: "foo", Email: "foo@example.com"}, wantedHeaders{"foo", "foo@example.com", "admin,users"}},
-		{"no name", nil, provider.UserInfo{Email: "foo@example.com"}, wantedHeaders{"", "foo@example.com", ""}},
+		{"no groups", nil, provider.Identity{Name: "foo", Email: "foo@example.com"}, wantedHeaders{"foo", "foo@example.com", ""}},
+		{"groups", []string{"admin", "users"}, provider.Identity{Name: "foo", Email: "foo@example.com"}, wantedHeaders{"foo", "foo@example.com", "admin,users"}},
+		{"no name", nil, provider.Identity{Email: "foo@example.com"}, wantedHeaders{"", "foo@example.com", ""}},
 	}
 
 	for _, tt := range tests {
@@ -141,7 +141,7 @@ func BenchmarkForwardAuthHandler(b *testing.B) {
 		slog.New(slog.DiscardHandler),
 	)
 
-	sessionID, err := mgr.Add(b.Context(), provider.UserInfo{Email: "foo@example.com"}, "")
+	sessionID, err := mgr.Add(b.Context(), provider.Identity{Email: "foo@example.com"}, "")
 	require.NoError(b, err)
 	cookie := http.Cookie{Name: cookieName, Value: sessionID}
 	req := forwardAuthRequest("/")
@@ -246,17 +246,17 @@ func (f *fakeAuthenticator) InitiateLogin(_ context.Context, u string) (string, 
 	return "https://oicd.example.com/_oauth?" + vals.Encode(), nil
 }
 
-func (f *fakeAuthenticator) ConfirmLogin(_ context.Context, state, code string) (provider.UserInfo, string, error) {
+func (f *fakeAuthenticator) ConfirmLogin(_ context.Context, state, code string) (provider.Identity, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if _, ok := f.codes[code]; !ok {
-		return provider.UserInfo{}, "", errors.New("invalid code")
+		return provider.Identity{}, "", errors.New("invalid code")
 	}
 	u, ok := f.states[state]
 	if !ok {
-		return provider.UserInfo{}, "", errors.New("invalid state")
+		return provider.Identity{}, "", errors.New("invalid state")
 	}
-	return provider.UserInfo{Name: "foo", Email: "foo@example.com"}, u, nil
+	return provider.Identity{Name: "foo", Email: "foo@example.com"}, u, nil
 }
 
 var _ Authorizer = (*fakeAuthorizer)(nil)

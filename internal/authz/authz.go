@@ -9,8 +9,8 @@ import (
 // Rule represents a single rule for the authorizer.
 type Rule struct {
 	Domain string   `yaml:"domain"`
-	Users  []string `yaml:"users"`
-	Groups []string `yaml:"groups"`
+	Users  []string `yaml:"users,omitempty"`
+	Groups []string `yaml:"groups,omitempty"`
 }
 
 // match returns true if the rule matches the given URL and either users or groups match the authenticated user.
@@ -46,7 +46,7 @@ func (r Rule) matchGroup(user string, groupDefinitions map[string]map[string]str
 // Group represents a group of users.
 type Group struct {
 	Name  string   `yaml:"name"`
-	Users []string `yaml:"users"`
+	Users []string `yaml:"users,omitempty"`
 }
 
 // Authorizer is responsible for authorizing requests based on rules and user/group definitions.

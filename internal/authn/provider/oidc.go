@@ -3,26 +3,30 @@ package provider
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )
 
-// oidcAuthenticator handles the OIDC authentication flow.
-type oidcAuthenticator struct {
-	config        oauth2.Config
-	provider      *oidc.Provider
-	selectAccount bool
+var _ Provider = (*oidcProvider)(nil)
+
+// oidcProvider authenticates the user using OIDC.
+type oidcProvider struct {
+	oauth2.Config
+	provider *oidc.Provider
+	verifier *oidc.IDTokenVerifier
 }
 
-// newOIDCAuthenticator creates a new oidcAuthenticator.
-func newOIDCAuthenticator(ctx context.Context, configuration OIDCConfiguration) (*oidcAuthenticator, error) {
+// newOIDCProvider creates a new oidcProvider.
+func newOIDCProvider(ctx context.Context, configuration Configuration) (*oidcProvider, error) {
 	var err error
-	a := oidcAuthenticator{selectAccount: configuration.SelectAccount}
+	var a oidcProvider
 	if a.provider, err = oidc.NewProvider(ctx, configuration.IssuerURL); err != nil {
 		return nil, fmt.Errorf("oidc provider: %w", err)
 	}
-	a.config = oauth2.Config{
+	a.verifier = a.provider.Verifier(&oidc.Config{ClientID: configuration.ClientID})
+	a.Config = oauth2.Config{
 		ClientID:     configuration.ClientID,
 		ClientSecret: configuration.ClientSecret,
 		Endpoint:     a.provider.Endpoint(),
@@ -32,30 +36,44 @@ func newOIDCAuthenticator(ctx context.Context, configuration OIDCConfiguration) 
 	return &a, nil
 }
 
-// AuthCodeURL returns the login URL to redirect the user to.
-func (o *oidcAuthenticator) AuthCodeURL(state string) string {
-	var opts []oauth2.AuthCodeOption
-	if o.selectAccount {
-		opts = append(opts, oauth2.SetAuthURLParam("prompt", "select_account"))
-	}
-	return o.config.AuthCodeURL(state, opts...)
-}
-
 // GetUserInfo completes the OIDC authentication flow and, if successful, returns the user info.
-func (o *oidcAuthenticator) GetUserInfo(ctx context.Context, code string) (UserInfo, error) {
-	token, err := o.config.Exchange(ctx, code)
-	if err != nil {
-		return UserInfo{}, fmt.Errorf("exchange code: %w", err)
+func (o *oidcProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (Identity, error) {
+	var id Identity
+	var err error
+
+	// verify the ID token. If we get an id_token, use that to retrieve the user's Identity.
+	if rawIDToken, ok := token.Extra("id_token").(string); ok {
+		if id, err = getIdentityFromToken(ctx, o.verifier, rawIDToken); err == nil {
+			return id, nil
+		}
+
+		// TODO: remove this log line once we have a better way to handle this.
+		slog.Warn("failed to get identity from id token. Using provider's user info endpoint instead", "err", err)
 	}
 
+	// Otherwise, use the access token to retrieve the user's Identity from the provider's user info endpoint.
 	userInfo, err := o.provider.UserInfo(ctx, oauth2.StaticTokenSource(token))
 	if err != nil {
-		return UserInfo{}, fmt.Errorf("get user info: %w", err)
+		return Identity{}, fmt.Errorf("get user info: %w", err)
 	}
 
-	var info UserInfo
-	if err = userInfo.Claims(&info); err != nil {
-		return UserInfo{}, fmt.Errorf("parse claims: %w", err)
+	if err = userInfo.Claims(&id); err != nil {
+		return Identity{}, fmt.Errorf("parse claims: %w", err)
 	}
-	return info, nil
+
+	return id, nil
+}
+
+func getIdentityFromToken(ctx context.Context, v *oidc.IDTokenVerifier, rawIDToken string) (Identity, error) {
+	idToken, err := v.Verify(ctx, rawIDToken)
+	if err != nil {
+		return Identity{}, fmt.Errorf("verify id token: %w", err)
+	}
+
+	var id Identity
+	if err = idToken.Claims(&id); err != nil {
+		return Identity{}, fmt.Errorf("parse claims: %w", err)
+	}
+
+	return id, nil
 }

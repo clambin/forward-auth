@@ -24,25 +24,27 @@ The main differences with the original are:
 
 ## Table of Contents
 
-- [Overview](#-overview)
-- [How It Works](#-how-it-works)
-    - [High-Level Flow](#-high-level-flow)
-    - [Key Components](#-key-components)
-- [Installation](#-installation)
-- [Configuration](#-configuration)
-    - [Example Configuration](#-example-configuration)
-- [Traefik Integration](#-traefik-integration)
-    - [Middleware](#middleware)
-    - [Authentication Endpoints & Routing](#-authentication-endpoints--routing)
-- [Session Management](#-session-management)
-  - [Session Overview (UI)](#-session-overview-ui)
-  - [What is a Session?](#-what-is-a-session)
-  - [Deleting Sessions via UI](#-deleting-sessions-via-ui)
-  - [Logging Out](#-logging-out)
-  - [What Happens After Deletion](#-what-happens-after-deletion)
-- [Troubleshooting](#-troubleshooting)
-- [Author](#-author)
-- [License](#-license)
+- [🚀 Overview](#-overview)
+- [🔄 How It Works](#-how-it-works)
+  - [🧭 High-Level Flow](#-high-level-flow)
+  - [🔑 Key Components](#-key-components)
+- [📦 Installation](#-installation)
+- [⚙️ Configuration](#-configuration)
+  - [🧾 Example Configuration](#-example-configuration)
+- [🔑 Identity Provider Configuration](#-identity-provider-configuration)
+- [🔌 Traefik Integration](#-traefik-integration)
+  - [Middleware](#middleware)
+  - [🔁 Authentication Endpoints & Routing](#-authentication-endpoints--routing)
+    - [Example HTTPRoute](#example-httproute)
+- [🧾 Session Management](#-session-management)
+  - [🔍 Session Overview (UI)](#-session-overview-ui)
+  - [🗂️ What is a Session?](#-what-is-a-session)
+  - [🧹 Deleting Sessions via UI](#-deleting-sessions-via-ui)
+  - [🔓 Logging Out](#-logging-out)
+  - [🔁 What Happens After Deletion?](#-what-happens-after-deletion)
+- [🛠️ Troubleshooting](#-troubleshooting)
+- [👤 Author](#-author)
+- [📄 License](#-license)
 
 ---
 
@@ -75,7 +77,7 @@ The system combines **Traefik forwardAuth**, **OIDC authentication**, and **sess
 
 ```
 ┌─────────┐      ┌─────────┐      ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
-│  Client │      │ Traefik │      │ forward-auth │      │ OIDC Provider│      │ Application  │   
+│  Client │      │ Traefik │      │ forward-auth │      │ ID Provider  │      │ Application  │   
 └────┬────┘      └────┬────┘      └──────┬───────┘      └──────┬───────┘      └──────┬───────┘
      │                │                  │                     │                     │
      │ Request        │ forwardAuth      │                     │                     │
@@ -92,6 +94,10 @@ The system combines **Traefik forwardAuth**, **OIDC authentication**, and **sess
      │                │                  │                     │                     │
      │ Login callback │                  │                     │                     │
      │───────────────►│─────────────────►│                     │                     │
+     │                │                  │  Get User details   │                     │
+     │                │                  │────────────────────►│                     │
+     │                │                  │◄────────────────────│                     │
+     │                │                  │                     │                     │
      │                │                  │  Create session     │                     │
      │                │                  │  Set cookie         │                     │
      │◄───────────────│◄─────────────────│                     │                     │
@@ -123,7 +129,7 @@ The system combines **Traefik forwardAuth**, **OIDC authentication**, and **sess
 #### Login Endpoint
 
 - `/api/auth/login`
-- Handles OIDC callback
+- Handles authentication callback
 - Creates session
 - Protects against CSRF attacks (via CSRF state token)
 
@@ -171,45 +177,45 @@ forward-auth --config /path/to/config.yaml
 ```yaml
 server:
   # HTTP server address. Default: ":8080".
-  addr: ":8080"
+  addr: :8080
   # HTTP Cookie Name. Default: "forward-auth-session".
-  cookieName: "forward-auth-session"
+  cookieName: forward-auth-session
   # Domain for which the cookie is valid. 
   # All protected hostnames (including auth) need to be subdomains of this domain.
-  domain: .example.com"
+  domain: .example.com
 
 logger:
   # Logging level. Default: "info".
-  level: "info"
+  level: info
   # Log format. json or text. Default: "text".
-  format: "json"
+  format: json
 
 prometheus:
   # Prometheus metrics listener. Default: ":9120".
-  addr: ":9120"
+  addr: :9120
   # prometheus metrics path. Default: "/metrics".
-  path: "/metrics"
+  path: /metrics
 
 authn:
   # Maximum lifetime of a CSRF state token. Default: 10m.
   # Effectively, how long we wait for the user to authenticate with their OIDC provider.
   state_ttl: 10m
+  # select_account determines whether the user is prompted to select an account with the OIDC provider. 
+  # if true, the user is always prompted to select an account.
+  # if false, the user is not prompted if already logged in at the OIDC provider.
+  # Default: false.
+  select_account: false
   provider:
-    # OIDC provider type. oidc or google. Default: "google".
+    # OIDC provider type. oidc, google or github. Default: "google".
     type: "google"
     # OIDC client ID.
     client_id: "<client-id>"
     # OIDC client secret.
     client_secret: "<client-secret>"
     # OIDC issuer URL. Only required for type oidc.
-    issuer_url: "https://accounts.google.com"
+    issuer_url: https://accounts.google.com
     # OIDC redirect URL: OIDC redirects to this URL after the user authenticates.
     redirect_url: https://auth.example.com/api/auth/login
-    # select_account determines whether the user is prompted to select an account with the OIDC provider. 
-    # if true, the user is always prompted to select an account.
-    # if false, the user is not prompted if already logged in at the OIDC provider.
-    # Default: false.
-    select_account: false
 
 authz:
   # Authorization rules. A request is allowed if it matches at least one rule.
@@ -217,21 +223,21 @@ authz:
   rules:
     - domain: "*.example.com"
       users:
-        - "user@example.com"
-    - domain: "admin.example.com"
+        - user@example.com
+    - domain: admin.example.com
       groups:
-        - "admins"
+        - admins
   groups:
     - name: admins
       users:
-        - "admin@example.com"
+        - admin@example.com
 
 storage:
   # Session and CSRF state storage type. local or redis. Default: "local".
-  type: "redis"
+  type: redis
   # Redis configuration.
   redis:
-    addr: "redis:6379"
+    addr: redis:6379
     username: "redis-username"
     password: "redis-password"
     db: 0
@@ -240,6 +246,30 @@ session:
   # Session lifetime. Default: 24h. 
   # Session is deleted after this time.
   session_ttl: 24h
+```
+
+---
+
+## 🔑 Identity Provider Configuration
+
+`forward-auth` relies on an external identity provider to authenticate users.
+Currently, we support the following providers:
+
+- GitHub
+- Google
+- Generic OIDC
+
+Only one provider is supported at a time. 
+
+Once the provider has been configured, add the relevant information in the authn.provider section in the configuration file:
+type, client_id, client_secret, issuer_url (only applicable for oidc) and redirect_url.
+
+Detailed instructions for each provider are available in [PROVIDERS.md](PROVIDERS.md).
+
+Configure your provider with:
+
+```
+https://auth.example.com/api/auth/login
 ```
 
 ---
@@ -265,11 +295,11 @@ spec:
 
 ---
 
-## 🔁 Authentication Endpoints & Routing
+### 🔁 Authentication Endpoints & Routing
 
 You must expose `forward-auth` via Traefik for browser-based login.
 
-### Example HTTPRoute
+#### Example HTTPRoute
 
 ```yaml
 apiVersion: gateway.networking.k8s.io/v1
@@ -309,16 +339,6 @@ spec:
 
 ---
 
-### 🔑 OIDC Redirect URI
-
-Configure your provider with:
-
-```
-https://auth.example.com/api/auth/login
-```
-
----
-
 ## 🧾 Session Management
 
 `forward-auth` provides basic session management capabilities, both via a UI and an HTTP API.
@@ -350,10 +370,9 @@ https://auth.example.com/
 
 A session represents an authenticated user and contains:
 
-- User identity (e.g. email)
-- Creation timestamp
+- User identity (e.g., email)
 - Last User Agent
-- Last seen information
+- Last Seen timestamp
 
 Each session is identified by a unique **session ID**, which is stored in the browser cookie:
 
@@ -398,13 +417,13 @@ curl -X DELETE \
 
 ---
 
-### 🔁 What Happens After Deletion
+### 🔁 What Happens After Deletion?
 
 - Session is removed from storage (local or Redis)
 - Cookie may still exist in the browser
 - Next request:
   - Session lookup fails
-  - User is redirected to `/api/auth/login`
+  - User is redirected to the identity provider to log in again
 
 ---
 
