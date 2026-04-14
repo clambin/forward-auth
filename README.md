@@ -33,7 +33,7 @@ The main differences with the original are:
   - [🧾 Example Configuration](#-example-configuration)
 - [🔑 Identity Provider Configuration](#-identity-provider-configuration)
 - [🔌 Traefik Integration](#-traefik-integration)
-  - [Middleware](#middleware)
+  - [⚡️ Middleware](#middleware)
   - [🔁 Authentication Endpoints & Routing](#-authentication-endpoints--routing)
     - [Example HTTPRoute](#example-httproute)
 - [🧾 Session Management](#-session-management)
@@ -76,9 +76,9 @@ The system combines **Traefik forwardAuth**, **OIDC authentication**, and **sess
 ### 🧭 High-Level Flow
 
 ```
-┌─────────┐      ┌─────────┐      ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
-│  Client │      │ Traefik │      │ forward-auth │      │ ID Provider  │      │ Application  │   
-└────┬────┘      └────┬────┘      └──────┬───────┘      └──────┬───────┘      └──────┬───────┘
+┌─────────┐      ┌─────────┐      ┌──────────────┐      ┌───────────────┐     ┌──────────────┐
+│  Client │      │ Traefik │      │ forward-auth │      │ OIDC Provider │     │ Application  │   
+└────┬────┘      └────┬────┘      └──────┬───────┘      └──────┬────────┘     └──────┬───────┘
      │                │                  │                     │                     │
      │ Request        │ forwardAuth      │                     │                     │
      │───────────────►│─────────────────►│                     │                     │
@@ -276,7 +276,7 @@ https://auth.example.com/api/auth/login
 
 ## 🔌 Traefik Integration
 
-### Middleware
+### ⚡️Middleware
 
 ```yaml
 apiVersion: traefik.io/v1alpha1
