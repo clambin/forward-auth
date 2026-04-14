@@ -19,7 +19,7 @@ type oidcProvider struct {
 }
 
 // newOIDCProvider creates a new oidcProvider.
-func newOIDCProvider(ctx context.Context, configuration OIDCConfiguration) (*oidcProvider, error) {
+func newOIDCProvider(ctx context.Context, configuration Configuration) (*oidcProvider, error) {
 	var err error
 	var a oidcProvider
 	if a.provider, err = oidc.NewProvider(ctx, configuration.IssuerURL); err != nil {

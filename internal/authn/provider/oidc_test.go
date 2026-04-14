@@ -16,13 +16,11 @@ func TestOIDCProvider(t *testing.T) {
 
 	ctx := t.Context()
 	config := Configuration{
-		Type: "oidc",
-		OIDC: OIDCConfiguration{
-			ClientID:     s.Config().ClientID,
-			ClientSecret: s.Config().ClientSecret,
-			RedirectURL:  "https://auth.example.com",
-			IssuerURL:    s.Issuer(),
-		},
+		Type:         "oidc",
+		ClientID:     s.Config().ClientID,
+		ClientSecret: s.Config().ClientSecret,
+		RedirectURL:  "https://auth.example.com",
+		IssuerURL:    s.Issuer(),
 	}
 
 	a, err := New(ctx, config)

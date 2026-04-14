@@ -1,0 +1,37 @@
+server:
+  addr: :8080
+  cookieName: session
+  domain: .example.com
+logger:
+  level: info
+  format: text
+prometheus:
+  addr: :9100
+  path: /metrics
+storage:
+  type: redis
+  redis:
+    addr: localhost:6379
+    username: my-user
+    password: my-password
+    db: 10
+authz:
+  rules:
+  - domain: "*.example.com"
+    groups:
+    - users
+  groups:
+  - name: users
+    users:
+    - foo@example.com
+authn:
+  provider:
+    type: oidc
+    client_id: "1234"
+    client_secret: "5678"
+    redirect_url: https://auth.example.com/api/auth/login
+    issuer_url: https://auth.example.com/oidc
+  state_ttl: 5m0s
+  select_account: true
+session:
+  session_ttl: 24h0m0s

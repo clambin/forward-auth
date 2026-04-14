@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"slices"
 
 	"github.com/google/go-github/v84/github"
@@ -21,7 +20,7 @@ type gitHubProvider struct {
 	client gitHubClient
 }
 
-func newGitHubProvider(config OIDCConfiguration) *gitHubProvider {
+func newGitHubProvider(config Configuration) *gitHubProvider {
 	return &gitHubProvider{Config: oauth2.Config{
 		ClientID:     config.ClientID,
 		ClientSecret: config.ClientSecret,
@@ -51,14 +50,12 @@ func (o gitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (I
 	}
 
 	// if we got an email address, we're done.
-	// TODO: the email in the user object may not be what we want.
 	if id.Email != "" {
 		return id, nil
 	}
 
-	slog.Info("no email address found in user object. getting it from the User Emails API")
-
 	// we didn't get an email address, so we need to get it from the ListEmails API
+	//slog.Info("no email address found in user object. getting it from the User Emails API")
 	emailAddresses, err := c.GetUserEmails(ctx)
 	if err != nil {
 		return Identity{}, fmt.Errorf("github email list: %w", err)

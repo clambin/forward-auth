@@ -8,12 +8,7 @@ import (
 )
 
 type Configuration struct {
-	Type          string            `yaml:"type"`
-	OIDC          OIDCConfiguration `yaml:"oidc"`
-	SelectAccount bool              `yaml:"select_account"`
-}
-
-type OIDCConfiguration struct {
+	Type         string `yaml:"type"`
 	ClientID     string `yaml:"client_id"`
 	ClientSecret string `yaml:"client_secret"`
 	RedirectURL  string `yaml:"redirect_url"`
@@ -38,16 +33,16 @@ func New(ctx context.Context, configuration Configuration) (Provider, error) {
 	switch configuration.Type {
 	case "google":
 		configuration.Type = "oidc"
-		configuration.OIDC.IssuerURL = "https://accounts.google.com"
+		configuration.IssuerURL = "https://accounts.google.com"
 		return New(ctx, configuration)
 	case "oidc":
-		a, err := newOIDCProvider(ctx, configuration.OIDC)
+		a, err := newOIDCProvider(ctx, configuration)
 		if err != nil {
 			return nil, fmt.Errorf("oidc authenticator: %w", err)
 		}
 		return a, nil
 	case "github":
-		return newGitHubProvider(configuration.OIDC), nil
+		return newGitHubProvider(configuration), nil
 	default:
 		return nil, fmt.Errorf("unsupported provider type: %s", configuration.Type)
 	}

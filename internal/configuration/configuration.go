@@ -44,9 +44,9 @@ type Configuration struct {
 	Server     ServerConfiguration     `yaml:"server"`
 	Logger     LoggerConfiguration     `yaml:"logger"`
 	Prometheus PrometheusConfiguration `yaml:"prometheus"`
+	Storage    StorageConfiguration    `yaml:"storage"`
 	Authz      AuthzConfiguration      `yaml:"authz"`
 	Authn      AuthnConfiguration      `yaml:"authn"`
-	Storage    StorageConfiguration    `yaml:"storage"`
 	Session    SessionConfiguration    `yaml:"session"`
 }
 
@@ -106,13 +106,14 @@ func (c PrometheusConfiguration) RunServer(ctx context.Context) error {
 }
 
 type AuthnConfiguration struct {
-	Provider provider.Configuration `yaml:"provider"`
-	StateTTL time.Duration          `yaml:"state_ttl"`
+	Provider      provider.Configuration `yaml:"provider"`
+	StateTTL      time.Duration          `yaml:"state_ttl"`
+	SelectAccount bool                   `yaml:"select_account"`
 }
 
 type AuthzConfiguration struct {
-	Rules  []authz.Rule  `yaml:"rules"`
-	Groups []authz.Group `yaml:"groups"`
+	Rules  []authz.Rule  `yaml:"rules,omitempty"`
+	Groups []authz.Group `yaml:"groups,omitempty"`
 }
 
 type StorageConfiguration struct {

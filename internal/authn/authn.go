@@ -25,18 +25,20 @@ type Authenticator struct {
 
 // New creates a new Authenticator.
 func New(ctx context.Context, configuration configuration.Configuration) (*Authenticator, error) {
-	var err error
-	var mgr Authenticator
-	mgr.states.cache, err = cache.New[string](configuration.Authn.StateTTL, stateKeyPrefix, configuration.Storage)
+	c, err := cache.New[string](configuration.Authn.StateTTL, stateKeyPrefix, configuration.Storage)
 	if err != nil {
 		return nil, fmt.Errorf("state store: %w", err)
 	}
-	mgr.provider, err = provider.New(ctx, configuration.Authn.Provider)
+	p, err := provider.New(ctx, configuration.Authn.Provider)
 	if err != nil {
 		return nil, fmt.Errorf("authenticator: %w", err)
 	}
-	mgr.selectAccount = configuration.Authn.Provider.SelectAccount
-	return &mgr, nil
+
+	return &Authenticator{
+		selectAccount: configuration.Authn.SelectAccount,
+		states:        states{cache: c},
+		provider:      p,
+	}, nil
 }
 
 // InitiateLogin returns the login URL for the configured OIDC provider.
