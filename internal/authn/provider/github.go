@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 
 	"github.com/google/go-github/v84/github"
@@ -54,6 +55,8 @@ func (o gitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (I
 	if id.Email != "" {
 		return id, nil
 	}
+
+	slog.Info("no email address found in user object. getting it from the User Emails API")
 
 	// we didn't get an email address, so we need to get it from the ListEmails API
 	emailAddresses, err := c.GetUserEmails(ctx)
