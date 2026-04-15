@@ -14,6 +14,7 @@ import (
 	"codeberg.org/clambin/go-common/httputils"
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/authz"
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -32,7 +33,15 @@ var DefaultConfiguration = Configuration{
 	},
 	Authn: AuthnConfiguration{
 		StateTTL: 10 * time.Minute,
-		Provider: provider.Configuration{Type: "google"},
+		Provider: provider.Configuration{
+			Type: "oidc",
+			OIDC: provider.OIDCConfiguration{
+				Scopes: []string{oidc.ScopeOpenID, "email", "profile"},
+			},
+			GitHub: provider.GitHubConfiguration{
+				Scopes: []string{"user:email", "read:user"},
+			},
+		},
 	},
 	Storage: StorageConfiguration{Type: "local"},
 	Session: SessionConfiguration{

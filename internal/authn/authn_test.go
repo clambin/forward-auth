@@ -21,11 +21,13 @@ func TestAuthenticator(t *testing.T) {
 		Authn: configuration.AuthnConfiguration{
 			StateTTL: 5 * time.Minute,
 			Provider: provider.Configuration{
-				Type:         "oidc",
-				ClientID:     oidcServer.Config().ClientID,
-				ClientSecret: oidcServer.Config().ClientSecret,
-				RedirectURL:  "https://auth.example.com",
-				IssuerURL:    oidcServer.Issuer(),
+				Type:        "oidc",
+				RedirectURL: "https://auth.example.com",
+				OIDC: provider.OIDCConfiguration{
+					ClientID:     oidcServer.Config().ClientID,
+					ClientSecret: oidcServer.Config().ClientSecret,
+					IssuerURL:    oidcServer.Issuer(),
+				},
 			},
 		},
 	}

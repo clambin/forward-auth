@@ -20,13 +20,16 @@ type gitHubProvider struct {
 	client gitHubClient
 }
 
-func newGitHubProvider(config Configuration) *gitHubProvider {
+func newGitHubProvider(redirectURL string, cfg GitHubConfiguration) *gitHubProvider {
+	if len(cfg.Scopes) == 0 {
+		cfg.Scopes = []string{"user:email", "read:user"}
+	}
 	return &gitHubProvider{Config: oauth2.Config{
-		ClientID:     config.ClientID,
-		ClientSecret: config.ClientSecret,
+		ClientID:     cfg.ClientID,
+		ClientSecret: cfg.ClientSecret,
 		Endpoint:     endpoints.GitHub,
-		RedirectURL:  config.RedirectURL,
-		Scopes:       []string{"user:email", "read:user"},
+		RedirectURL:  redirectURL,
+		Scopes:       cfg.Scopes,
 	}}
 }
 

@@ -206,16 +206,30 @@ authn:
   # Default: false.
   select_account: false
   provider:
-    # OIDC provider type. oidc, google or github. Default: "google".
+    # OIDC provider type. oidc, google or github.
     type: "google"
-    # OIDC client ID.
-    client_id: "<client-id>"
-    # OIDC client secret.
-    client_secret: "<client-secret>"
-    # OIDC issuer URL. Only required for type oidc.
-    issuer_url: https://accounts.google.com
     # OIDC redirect URL: OIDC redirects to this URL after the user authenticates.
     redirect_url: https://auth.example.com/api/auth/login
+    # OIDC-related configuration (including google).
+    oidc:
+      # OIDC client ID.
+      client_id: "<client-id>"
+      # OIDC client secret.
+      client_secret: "<client-secret>"
+      # OIDC issuer URL. Only required for type oidc.
+      issuer_url: https://accounts.google.com
+      # scopes to request from the OIDC provider. 
+      # only override this if you know what you're doing.
+      scopes: [ openid, email, profile ]
+    # GitHub-related configuration. Only required for type github.
+    github:
+      # Oauth2 client ID.
+      client_id: "<client-id>"
+      # Oauth2 client secret.
+      client_secret: "<client-secret>"
+      # scopes to request from github. 
+      # only override this if you know what you're doing.
+      scopes: [ user:email, read:user ]
 
 authz:
   # Authorization rules. A request is allowed if it matches at least one rule.

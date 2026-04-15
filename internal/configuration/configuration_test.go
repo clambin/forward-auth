@@ -7,9 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/goccy/go-yaml"
 	"github.com/stretchr/testify/assert"
@@ -41,50 +39,26 @@ func TestLoggerConfiguration_Logger(t *testing.T) {
 }
 
 func TestConfiguration_Unmarshal(t *testing.T) {
-	cfg := Configuration{
-		Server: ServerConfiguration{
-			Addr:       ":8080",
-			Domain:     ".example.com",
-			CookieName: "session",
+	cfg := DefaultConfiguration
+	cfg.Authz = AuthzConfiguration{
+		Rules: []authz.Rule{
+			{Domain: "*.example.com", Groups: []string{"users"}},
 		},
-		Logger: LoggerConfiguration{
-			Level:  "info",
-			Format: "text",
+		Groups: []authz.Group{
+			{Name: "users", Users: []string{"foo@example.com"}},
 		},
-		Prometheus: PrometheusConfiguration{
-			Addr: ":9100",
-			Path: "/metrics",
-		},
-		Authz: AuthzConfiguration{
-			Rules: []authz.Rule{
-				{Domain: "*.example.com", Groups: []string{"users"}},
-			},
-			Groups: []authz.Group{
-				{Name: "users", Users: []string{"foo@example.com"}},
-			},
-		},
-		Authn: AuthnConfiguration{
-			Provider: provider.Configuration{
-				Type:         "oidc",
-				ClientID:     "1234",
-				ClientSecret: "5678",
-				RedirectURL:  "https://auth.example.com/api/auth/login",
-				IssuerURL:    "https://auth.example.com/oidc",
-			},
-			StateTTL:      5 * time.Minute,
-			SelectAccount: true,
-		},
-		Storage: StorageConfiguration{
-			Type: "redis",
-			Redis: StorageRedisConfiguration{
-				Addr:     "localhost:6379",
-				Username: "my-user",
-				Password: "my-password",
-				DB:       10,
-			},
-		},
-		Session: SessionConfiguration{
-			SessionTTL: 24 * time.Hour,
+	}
+	cfg.Authn.Provider.RedirectURL = "https://auth.example.com/api/auth/login"
+	cfg.Authn.Provider.OIDC.ClientID = "1234"
+	cfg.Authn.Provider.OIDC.ClientSecret = "5678"
+	cfg.Authn.Provider.OIDC.IssuerURL = "https://auth.example.com/oidc"
+	cfg.Storage = StorageConfiguration{
+		Type: "redis",
+		Redis: StorageRedisConfiguration{
+			Addr:     "localhost:6379",
+			Username: "my-user",
+			Password: "my-password",
+			DB:       10,
 		},
 	}
 

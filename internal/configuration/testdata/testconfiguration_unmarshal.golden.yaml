@@ -1,12 +1,12 @@
 server:
   addr: :8080
-  cookieName: session
-  domain: .example.com
+  cookieName: forward-auth-session
+  domain: ""
 logger:
   level: info
   format: text
 prometheus:
-  addr: :9100
+  addr: :9120
   path: /metrics
 storage:
   type: redis
@@ -27,11 +27,22 @@ authz:
 authn:
   provider:
     type: oidc
-    client_id: "1234"
-    client_secret: "5678"
     redirect_url: https://auth.example.com/api/auth/login
-    issuer_url: https://auth.example.com/oidc
-  state_ttl: 5m0s
-  select_account: true
+    oidc:
+      issuer_url: https://auth.example.com/oidc
+      client_id: "1234"
+      client_secret: "5678"
+      scopes:
+      - openid
+      - email
+      - profile
+    github:
+      client_id: ""
+      client_secret: ""
+      scopes:
+      - user:email
+      - read:user
+  state_ttl: 10m0s
+  select_account: false
 session:
   session_ttl: 24h0m0s

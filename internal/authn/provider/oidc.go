@@ -19,19 +19,23 @@ type oidcProvider struct {
 }
 
 // newOIDCProvider creates a new oidcProvider.
-func newOIDCProvider(ctx context.Context, configuration Configuration) (*oidcProvider, error) {
+func newOIDCProvider(ctx context.Context, redirectURL string, cfg OIDCConfiguration) (*oidcProvider, error) {
 	var err error
 	var a oidcProvider
-	if a.provider, err = oidc.NewProvider(ctx, configuration.IssuerURL); err != nil {
+	if a.provider, err = oidc.NewProvider(ctx, cfg.IssuerURL); err != nil {
 		return nil, fmt.Errorf("oidc provider: %w", err)
 	}
-	a.verifier = a.provider.Verifier(&oidc.Config{ClientID: configuration.ClientID})
+	a.verifier = a.provider.Verifier(&oidc.Config{ClientID: cfg.ClientID})
+	if len(cfg.Scopes) == 0 {
+		cfg.Scopes = []string{oidc.ScopeOpenID, "profile", "email"}
+	}
+
 	a.Config = oauth2.Config{
-		ClientID:     configuration.ClientID,
-		ClientSecret: configuration.ClientSecret,
+		ClientID:     cfg.ClientID,
+		ClientSecret: cfg.ClientSecret,
 		Endpoint:     a.provider.Endpoint(),
-		RedirectURL:  configuration.RedirectURL,
-		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+		RedirectURL:  redirectURL,
+		Scopes:       cfg.Scopes,
 	}
 	return &a, nil
 }

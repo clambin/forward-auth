@@ -7,14 +7,6 @@ import (
 	"golang.org/x/oauth2"
 )
 
-type Configuration struct {
-	Type         string `yaml:"type"`
-	ClientID     string `yaml:"client_id"`
-	ClientSecret string `yaml:"client_secret"`
-	RedirectURL  string `yaml:"redirect_url"`
-	IssuerURL    string `yaml:"issuer_url"`
-}
-
 type Identity struct {
 	Subject string `json:"sub"`
 	Email   string `json:"email"`
@@ -33,16 +25,16 @@ func New(ctx context.Context, configuration Configuration) (Provider, error) {
 	switch configuration.Type {
 	case "google":
 		configuration.Type = "oidc"
-		configuration.IssuerURL = "https://accounts.google.com"
+		configuration.OIDC.IssuerURL = "https://accounts.google.com"
 		return New(ctx, configuration)
 	case "oidc":
-		a, err := newOIDCProvider(ctx, configuration)
+		a, err := newOIDCProvider(ctx, configuration.RedirectURL, configuration.OIDC)
 		if err != nil {
 			return nil, fmt.Errorf("oidc authenticator: %w", err)
 		}
 		return a, nil
 	case "github":
-		return newGitHubProvider(configuration), nil
+		return newGitHubProvider(configuration.RedirectURL, configuration.GitHub), nil
 	default:
 		return nil, fmt.Errorf("unsupported provider type: %s", configuration.Type)
 	}

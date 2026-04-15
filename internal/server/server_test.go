@@ -18,8 +18,11 @@ import (
 func TestServer(t *testing.T) {
 	// verify that each target reaches the right handler
 	cfg := configuration.DefaultConfiguration
-	s, _ := sessions.New(5*time.Minute, cfg.Storage)
-	an, _ := authn.New(t.Context(), cfg)
+	cfg.Authn.Provider.Type = "google"
+	s, err := sessions.New(5*time.Minute, cfg.Storage)
+	require.NoError(t, err)
+	an, err := authn.New(t.Context(), cfg)
+	require.NoError(t, err)
 	az := authz.Authorizer{Rules: cfg.Authz.Rules, Groups: cfg.Authz.Groups}
 
 	h := New(cfg.Server, s, an, &az, nil, middleware.GetMetrics(), slog.New(slog.DiscardHandler))
