@@ -24,31 +24,31 @@ The main differences with the original are:
 
 ## Table of Contents
 
-- [🚀 Overview](#-overview)
-- [🔄 How It Works](#-how-it-works)
-  - [🧭 High-Level Flow](#-high-level-flow)
-  - [🔑 Key Components](#-key-components)
-- [📦 Installation](#-installation)
-- [⚙️ Configuration](#-configuration)
-  - [🧾 Example Configuration](#-example-configuration)
-- [🔑 Identity Provider Configuration](#-identity-provider-configuration)
-- [🔌 Traefik Integration](#-traefik-integration)
-  - [⚡️ Middleware](#middleware)
-  - [🔁 Authentication Endpoints & Routing](#-authentication-endpoints--routing)
-    - [Example HTTPRoute](#example-httproute)
-- [🧾 Session Management](#-session-management)
-  - [🔍 Session Overview (UI)](#-session-overview-ui)
-  - [🗂️ What is a Session?](#-what-is-a-session)
-  - [🧹 Deleting Sessions via UI](#-deleting-sessions-via-ui)
-  - [🔓 Logging Out](#-logging-out)
-  - [🔁 What Happens After Deletion?](#-what-happens-after-deletion)
-- [🛠️ Troubleshooting](#-troubleshooting)
-- [👤 Author](#-author)
-- [📄 License](#-license)
+- [Overview](#overview)
+- [How It Works](#how-it-works)
+  - [High-Level Flow](#high-level-flow)
+  - [Key Components](#key-components)
+- [Installation](#installation)
+- [Configuration](#configuration)
+  - [Example Configuration](#example-configuration)
+- [Identity Provider Configuration](#identity-provider-configuration)
+- [Traefik Integration](#traefik-integration)
+  - [Middleware](#middleware)
+  - [Authentication Endpoints & Routing](#authentication-endpoints--routing)
+- [Session Management](#session-management)
+  - [Session Overview (UI)](#session-overview-ui)
+  - [What is a Session?](#what-is-a-session)
+  - [Deleting Sessions via UI](#deleting-sessions-via-ui)
+  - [Logging Out](#logging-out)
+  - [What Happens After Deletion?](#what-happens-after-deletion)
+- [Metrics](#metrics)
+- [Troubleshooting](#troubleshooting)
+- [Author](#author)
+- [License](#license)
 
 ---
 
-## 🚀 Overview
+## Overview
 
 This service acts as an authentication and authorization gateway in front of your applications via Traefik.
 
@@ -69,15 +69,15 @@ Client ──► Traefik ──► forward-auth ──► OIDC Provider
 
 ---
 
-## 🔄 How It Works
+## How It Works
 
 The system combines **Traefik forwardAuth**, **OIDC authentication**, and **session management**.
 
-### 🧭 High-Level Flow
+### High-Level Flow
 
 ```
 ┌─────────┐      ┌─────────┐      ┌──────────────┐      ┌───────────────┐     ┌──────────────┐
-│  Client │      │ Traefik │      │ forward-auth │      │ OIDC Provider │     │ Application  │   
+│ Browser │      │ Traefik │      │ forward-auth │      │ OIDC Provider │     │ Application  │   
 └────┬────┘      └────┬────┘      └──────┬───────┘      └──────┬────────┘     └──────┬───────┘
      │                │                  │                     │                     │
      │ Request        │ forwardAuth      │                     │                     │
@@ -109,13 +109,13 @@ The system combines **Traefik forwardAuth**, **OIDC authentication**, and **sess
      │                │   OK (2xx)       │                     │                     │
      │                │◄─────────────────│                     │                     │
      │                │                  │                     │                     │
-     │                │ Forward to upstream                    │                     │
+     │                │ Perform request  │                     │                     │
      │                │─────────────────────────────────────────────────────────────►│
 ```
 
 ---
 
-### 🔑 Key Components
+### Key Components
 
 #### forwardAuth (Traefik)
 
@@ -152,13 +152,13 @@ The system combines **Traefik forwardAuth**, **OIDC authentication**, and **sess
 
 ---
 
-## 📦 Installation
+## Installation
 
 Container images are available on [ghcr.io](https://ghcr.io/clambin/traefik-forward-auth). Images are available for linux/amd64 and linux/arm64.
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 Configuration is loaded from:
 
@@ -172,7 +172,7 @@ Override with:
 forward-auth --config /path/to/config.yaml
 ```
 
-### 🧾 Example Configuration
+### Example Configuration
 
 ```yaml
 server:
@@ -250,7 +250,7 @@ session:
 
 ---
 
-## 🔑 Identity Provider Configuration
+## Identity Provider Configuration
 
 `forward-auth` relies on an external identity provider to authenticate users.
 Currently, we support the following providers:
@@ -274,9 +274,9 @@ https://auth.example.com/api/auth/login
 
 ---
 
-## 🔌 Traefik Integration
+## Traefik Integration
 
-### ⚡️Middleware
+### Middleware
 
 ```yaml
 apiVersion: traefik.io/v1alpha1
@@ -295,7 +295,7 @@ spec:
 
 ---
 
-### 🔁 Authentication Endpoints & Routing
+### Authentication Endpoints & Routing
 
 You must expose `forward-auth` via Traefik for browser-based login.
 
@@ -339,13 +339,13 @@ spec:
 
 ---
 
-## 🧾 Session Management
+## Session Management
 
 `forward-auth` provides basic session management capabilities, both via a UI and an HTTP API.
 
 ---
 
-### 🔍 Session Overview (UI)
+### Session Overview (UI)
 
 The service exposes a UI where you can:
 
@@ -366,7 +366,7 @@ https://auth.example.com/
 
 ---
 
-### 🗂️ What is a Session?
+### What is a Session?
 
 A session represents an authenticated user and contains:
 
@@ -382,7 +382,7 @@ Cookie: forward-auth-session=<session-id>
 
 ---
 
-### 🧹 Deleting Sessions via UI
+### Deleting Sessions via UI
 
 From the UI, you can:
 
@@ -396,7 +396,7 @@ This is useful for:
 
 ---
 
-### 🔓 Logging Out
+### Logging Out
 
 To log out a session:
 
@@ -417,7 +417,7 @@ curl -X DELETE \
 
 ---
 
-### 🔁 What Happens After Deletion?
+### What Happens After Deletion?
 
 - Session is removed from storage (local or Redis)
 - Cookie may still exist in the browser
@@ -425,20 +425,35 @@ curl -X DELETE \
   - Session lookup fails
   - User is redirected to the identity provider to log in again
 
+--- 
+## Metrics
+
+| metric                        | type    | labels                | help                            |
+|-------------------------------|---------|-----------------------|---------------------------------|
+| forward_auth_session_count    | GAUGE   |                       | Number of active sessions       |
+| forward_auth_state_count      | GAUGE   |                       | Number of active states         |
+| http_request_duration_seconds | SUMMARY | code, handler, method | request duration in seconds     |
+| http_requests_total           | COUNTER | code, handler, method | total requests processed        |
+
+
+
+A sample Grafana dashboard is available [here](assets/grafana/dashboards.yaml).
+
+![screenshot.png](assets/images/screenshot.png)
 ---
 
-## 🛠️ Troubleshooting
+## Troubleshooting
 
 See [Troubleshooting](TROUBLESHOOTING.md).
 
 ---
 
-## 👤 Author
+## Author
 
 Christophe Lambin
 
 ---
 
-## 📄 License
+## License
 
 [MIT License](LICENSE.md)
