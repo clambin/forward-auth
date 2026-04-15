@@ -32,12 +32,31 @@ authn:
       issuer_url: https://accounts.google.com
 ```
 
+### codeberg.org
+
+`codeberg.org` uses OpenID Connect to authenticate users.
+
+Head to https://codeberg.org/user/settings/applications and create a new OAuth2 application. Give the application a name 
+and add the redirect URI as per the section [Redirect URI](#redirect-uri). Register the application and note the Client ID and Client Secret.
+
+Configure authn.provider to use oicd to authenticate users:
+
+```yaml
+authn:
+  provider:
+    type: oidc
+    oidc:
+      client_id: "<client_id>"
+      client_secret: "<client_secret>"
+      issuer_url: https://codeberg.org
+```
+
 ### GitHub
 
 Since GitHub does not support OpenID Connect, `forward-auth` uses GitHub's OAuth2 API to authenticate users.
 
-Head to https://github.com/settings/developers and create a new OAUTH application. Give the application a name and define the
-authorized redirect URIs as per the section [Redirect URI](#redirect-uri). Register the application and note the Client ID and Client Secret.
+Head to https://github.com/settings/developers and create a new OAUTH application. Give the application a name and add the
+redirect URIs as per the section [Redirect URI](#redirect-uri). Register the application and note the Client ID and Client Secret.
 
 Configure authn.provider to use github to authenticate users:
 
