@@ -66,7 +66,11 @@ func main() {
 	logger.Info("starting forward-auth", "version", version)
 
 	metrics := middleware.GetMetrics()
-	prometheus.MustRegister(metrics)
+	prometheus.MustRegister(
+		metrics,
+		sessions.InstrumentedManager{Manager: sessionMgr},
+		authn.InstrumentedAuthenticator{Authenticator: authenticator},
+	)
 
 	var g errgroup.Group
 	// Prometheus

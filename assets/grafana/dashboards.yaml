@@ -3,7 +3,6 @@ apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
   name: forward-auth
-  namespace: forward-auth
 spec:
   allowCrossNamespaceImport: true
   contentCacheDuration: 0s
@@ -32,9 +31,147 @@ spec:
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 0,
-      "id": 110,
+      "id": 112,
       "links": [],
       "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": 0
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 4,
+            "x": 0,
+            "y": 0
+          },
+          "id": 7,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "percentChangeColorMode": "standard",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showPercentChange": false,
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "pluginVersion": "12.3.1",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum (forward_auth_session_count{instance=~\"^$instance$\"})",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Active sessions",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "decimals": 0,
+              "fieldMinMax": true,
+              "mappings": [],
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": 0
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 5,
+            "x": 4,
+            "y": 0
+          },
+          "id": 9,
+          "options": {
+            "displayMode": "lcd",
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "maxVizHeight": 300,
+            "minVizHeight": 16,
+            "minVizWidth": 8,
+            "namePlacement": "auto",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showUnfilled": true,
+            "sizing": "auto",
+            "valueMode": "color"
+          },
+          "pluginVersion": "12.3.1",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum (forward_auth_session_count{instance=~\"^$instance$\"})",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Active sessions",
+          "type": "bargauge"
+        },
         {
           "datasource": {
             "type": "prometheus",
@@ -98,9 +235,9 @@ spec:
             "overrides": []
           },
           "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
+            "h": 10,
+            "w": 8,
+            "x": 9,
             "y": 0
           },
           "id": 1,
@@ -125,13 +262,13 @@ spec:
                 "uid": "PBFA97CFB590B2093"
               },
               "editorMode": "code",
-              "expr": "sum (rate(http_requests_total{app=\"forward-auth\"}[$__rate_interval])) by (code)",
+              "expr": "sum (rate(http_requests_total{app=\"forward-auth\",handler=\"forwardauth\"}[$__rate_interval])) by (code)",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "request rate",
+          "title": "forwardAuth request rate",
           "type": "timeseries"
         },
         {
@@ -197,9 +334,9 @@ spec:
             "overrides": []
           },
           "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
+            "h": 10,
+            "w": 7,
+            "x": 17,
             "y": 0
           },
           "id": 2,
@@ -220,14 +357,221 @@ spec:
           "targets": [
             {
               "editorMode": "code",
-              "expr": "avg(http_request_duration_seconds{app=\"forward-auth\", handler=\"forwardAuth\", quantile=\"$p\"}) by (handler, code)",
+              "expr": "avg(http_request_duration_seconds{instance=~\"^$instance$\", handler=\"forwardauth\", quantile=\"$percentile\"}) by (code)",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "latency",
+          "title": "forwardAuth request latency",
           "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": 0
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 4,
+            "x": 0,
+            "y": 5
+          },
+          "id": 8,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "percentChangeColorMode": "standard",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showPercentChange": false,
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "pluginVersion": "12.3.1",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(forward_auth_state_count{instance=~\"^$instance$\"})",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Active login states",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "decimals": 0,
+              "fieldMinMax": false,
+              "mappings": [],
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": 0
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 5,
+            "x": 4,
+            "y": 5
+          },
+          "id": 10,
+          "options": {
+            "displayMode": "lcd",
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "maxVizHeight": 300,
+            "minVizHeight": 16,
+            "minVizWidth": 8,
+            "namePlacement": "auto",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showUnfilled": true,
+            "sizing": "auto",
+            "valueMode": "color"
+          },
+          "pluginVersion": "12.3.1",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(forward_auth_state_count{instance=~\"^$instance$\"})",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Active login states",
+          "type": "bargauge"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": 0
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 4,
+            "x": 0,
+            "y": 10
+          },
+          "id": 3,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "percentChangeColorMode": "standard",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showPercentChange": false,
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "pluginVersion": "12.3.1",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+              },
+              "editorMode": "code",
+              "expr": "sum (increase(http_requests_total{instance=~\"^$instance$\", handler=\"login\",code=\"303\"}[1m]))",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "logins",
+          "type": "stat"
         },
         {
           "datasource": {
@@ -278,7 +622,7 @@ spec:
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
+                    "color": "orange",
                     "value": 0
                   },
                   {
@@ -292,12 +636,12 @@ spec:
             "overrides": []
           },
           "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 8
+            "h": 5,
+            "w": 5,
+            "x": 4,
+            "y": 10
           },
-          "id": 3,
+          "id": 11,
           "options": {
             "legend": {
               "calcs": [],
@@ -319,13 +663,13 @@ spec:
                 "uid": "PBFA97CFB590B2093"
               },
               "editorMode": "code",
-              "expr": "sum (rate(http_requests_total{app=\"forward-auth\", handler=\"login\"}[$__rate_interval])) by (code)",
+              "expr": "sum (rate(http_requests_total{instance=~\"^$instance$\", handler=\"login\",code!=\"303\"}[$__rate_interval])) by (code)",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "logins",
+          "title": "invalid login attempts",
           "type": "timeseries"
         },
         {
@@ -385,18 +729,17 @@ spec:
                     "value": 80
                   }
                 ]
-              },
-              "unit": "s"
+              }
             },
             "overrides": []
           },
           "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 8
+            "h": 5,
+            "w": 15,
+            "x": 9,
+            "y": 10
           },
-          "id": 4,
+          "id": 6,
           "options": {
             "legend": {
               "calcs": [],
@@ -414,13 +757,13 @@ spec:
           "targets": [
             {
               "editorMode": "code",
-              "expr": "avg(http_request_duration_seconds{app=\"forward-auth\", handler=\"login\", quantile=\"$p\"}) by (handler, code)",
+              "expr": "sum (rate(redis_commands_total{namespace=\"forward-auth\"}[$__rate_interval])) by (cmd)",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "login latency",
+          "title": "redis operations",
           "type": "timeseries"
         }
       ],
@@ -433,16 +776,36 @@ spec:
         "list": [
           {
             "current": {
-              "text": "0.5",
-              "value": "0.5"
+              "text": "0.99",
+              "value": "0.99"
             },
             "definition": "label_values(http_request_duration_seconds{app=\"forward-auth\"},quantile)",
             "description": "",
-            "name": "p",
+            "name": "percentile",
             "options": [],
             "query": {
               "qryType": 1,
               "query": "label_values(http_request_duration_seconds{app=\"forward-auth\"},quantile)",
+              "refId": "PrometheusVariableQueryEditor-VariableQuery"
+            },
+            "refresh": 1,
+            "regex": "",
+            "type": "query"
+          },
+          {
+            "allowCustomValue": false,
+            "current": {
+              "text": "10.42.6.221:9120",
+              "value": "10.42.6.221:9120"
+            },
+            "definition": "label_values(forward_auth_session_count,instance)",
+            "description": "",
+            "includeAll": true,
+            "name": "instance",
+            "options": [],
+            "query": {
+              "qryType": 1,
+              "query": "label_values(forward_auth_session_count,instance)",
               "refId": "PrometheusVariableQueryEditor-VariableQuery"
             },
             "refresh": 1,
@@ -458,8 +821,8 @@ spec:
       "timepicker": {},
       "timezone": "browser",
       "title": "forward-auth",
-      "uid": "chf72jv",
-      "version": 1,
+      "uid": "chf2v8c",
+      "version": 4,
       "weekStart": ""
     }
   resyncPeriod: 10m0s
