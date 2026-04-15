@@ -23,10 +23,6 @@ type Provider interface {
 // New creates a new authentication provider for the provided configuration.
 func New(ctx context.Context, configuration Configuration) (Provider, error) {
 	switch configuration.Type {
-	case "google":
-		configuration.Type = "oidc"
-		configuration.OIDC.IssuerURL = "https://accounts.google.com"
-		return New(ctx, configuration)
 	case "oidc":
 		a, err := newOIDCProvider(ctx, configuration.RedirectURL, configuration.OIDC)
 		if err != nil {

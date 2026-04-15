@@ -18,7 +18,7 @@ import (
 func TestServer(t *testing.T) {
 	// verify that each target reaches the right handler
 	cfg := configuration.DefaultConfiguration
-	cfg.Authn.Provider.Type = "google"
+	cfg.Authn.Provider.Type = "github"
 	s, err := sessions.New(5*time.Minute, cfg.Storage)
 	require.NoError(t, err)
 	an, err := authn.New(t.Context(), cfg)

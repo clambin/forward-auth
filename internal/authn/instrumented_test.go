@@ -12,7 +12,7 @@ import (
 
 func TestInstrumentedManager(t *testing.T) {
 	authenticator, _ := New(t.Context(), configuration.Configuration{
-		Authn: configuration.AuthnConfiguration{Provider: provider.Configuration{Type: "google"}},
+		Authn: configuration.AuthnConfiguration{Provider: provider.Configuration{Type: "github"}},
 	})
 	_, _ = authenticator.InitiateLogin(t.Context(), "www.example.com")
 
