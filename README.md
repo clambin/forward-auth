@@ -206,11 +206,11 @@ authn:
   # Default: false.
   select_account: false
   provider:
-    # OIDC provider type. oidc, google or github.
-    type: "google"
+    # OIDC provider type. oidc or github.
+    type: "oidc"
     # OIDC redirect URL: OIDC redirects to this URL after the user authenticates.
     redirect_url: https://auth.example.com/api/auth/login
-    # OIDC-related configuration (including google).
+    # OIDC-related configuration.
     oidc:
       # OIDC client ID.
       client_id: "<client-id>"
@@ -269,9 +269,8 @@ session:
 `forward-auth` relies on an external identity provider to authenticate users.
 Currently, we support the following providers:
 
+- OIDC
 - GitHub
-- Google
-- Generic OIDC
 
 Only one provider is supported at a time. 
 
