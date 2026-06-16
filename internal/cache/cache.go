@@ -40,12 +40,12 @@ var (
 	_ Cache[string] = (*redisCache[string])(nil)
 )
 
-// New creates a new cache for values of type T of the type specified in configuration.Type.
+// New creates a new cache of the type specified in configuration.Type, for values of type T.
 // Supports an in-memory cache (type "local" or blank) and a Redis cache (type "redis").
 //
 // ttl specifies when items expire from the cache.
-// prefix is used to prefix the keys of the cache to prevent name collisions when the cache is shared across multiple services or instances.
-// Local caches ignore the prefix and should not be shared across services.
+// prefix is used to prefix the keys of the cache to prevent name collisions when the physical cache is shared across multiple components.
+// Local caches ignore the prefix as they cannot be shared across services.
 func New[T any](ttl time.Duration, prefix string, configuration configuration.StorageConfiguration) (Cache[T], error) {
 	var c Cache[T]
 	switch configuration.Type {
