@@ -37,7 +37,7 @@ func (o gitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (I
 	// use a new gh client, unless testing created a stub
 	c := cmp.Or[gitHubClient](
 		o.client,
-		&realGitHubClient{Client: github.NewClient(o.Config.Client(ctx, token))},
+		&realGitHubClient{Client: github.NewClient(o.Client(ctx, token))},
 	)
 
 	// get the user

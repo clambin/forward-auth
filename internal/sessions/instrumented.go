@@ -19,7 +19,7 @@ func (i InstrumentedManager) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (i InstrumentedManager) Collect(ch chan<- prometheus.Metric) {
-	sessions, err := i.Manager.List(context.Background())
+	sessions, err := i.List(context.Background())
 	if err != nil {
 		return
 	}
