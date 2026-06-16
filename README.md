@@ -71,7 +71,8 @@ Client ──► Traefik ──► forward-auth ──► OIDC Provider
 
 ## How It Works
 
-The system combines **Traefik forwardAuth**, **OIDC authentication**, and **session management**.
+`forward-auth` uses **OIDC authentication** to authenticate the user. Authenticated users are allocated a **session** 
+that is passed via an **HTTP cookie**.
 
 ### High-Level Flow
 
@@ -262,12 +263,23 @@ session:
   session_ttl: 24h
 ```
 
+Sensitive data, such as OID client secrets and redis passwords, can be passed in as environment variables:
+
+```
+storage:
+  type: redis
+  redis:
+    addr: redis:6379
+    password: ${REDIS_PASSWORD}
+    db: 0
+```
+
 ---
 
 ## Identity Provider Configuration
 
 `forward-auth` relies on an external identity provider to authenticate users.
-Currently, we support the following providers:
+Currently, it supports the following providers:
 
 - OIDC
 - GitHub
@@ -277,9 +289,9 @@ Only one provider is supported at a time.
 Once the provider has been configured, add the relevant information in the authn.provider section in the configuration file:
 type, client_id, client_secret, issuer_url (only applicable for oidc) and redirect_url.
 
-Detailed instructions for each provider are available in [PROVIDERS.md](PROVIDERS.md).
+Detailed instructions for various providers are available in [PROVIDERS.md](PROVIDERS.md).
 
-Configure your provider with:
+Configure your provider the following redirect URL:
 
 ```
 https://auth.example.com/api/auth/login
@@ -441,14 +453,14 @@ curl -X DELETE \
 --- 
 ## Metrics
 
+`forward-auth` exposes the following Prometheus metrics on the `/metrics` endpoint:
+
 | metric                        | type    | labels                | help                            |
 |-------------------------------|---------|-----------------------|---------------------------------|
 | forward_auth_session_count    | GAUGE   |                       | Number of active sessions       |
 | forward_auth_state_count      | GAUGE   |                       | Number of active states         |
 | http_request_duration_seconds | SUMMARY | code, handler, method | request duration in seconds     |
 | http_requests_total           | COUNTER | code, handler, method | total requests processed        |
-
-
 
 A sample Grafana dashboard is available [here](assets/grafana/dashboards.yaml).
 
