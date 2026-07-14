@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/google/go-github/v84/github"
+	"github.com/google/go-github/v89/github"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/endpoints"
 )
@@ -24,20 +24,27 @@ func newGitHubProvider(redirectURL string, cfg GitHubConfiguration) *gitHubProvi
 	if len(cfg.Scopes) == 0 {
 		cfg.Scopes = []string{"user:email", "read:user"}
 	}
-	return &gitHubProvider{Config: oauth2.Config{
-		ClientID:     cfg.ClientID,
-		ClientSecret: cfg.ClientSecret,
-		Endpoint:     endpoints.GitHub,
-		RedirectURL:  redirectURL,
-		Scopes:       cfg.Scopes,
-	}}
+	return &gitHubProvider{
+		Config: oauth2.Config{
+			ClientID:     cfg.ClientID,
+			ClientSecret: cfg.ClientSecret,
+			Endpoint:     endpoints.GitHub,
+			RedirectURL:  redirectURL,
+			Scopes:       cfg.Scopes,
+		},
+	}
 }
 
-func (o gitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (Identity, error) {
+func (o *gitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (Identity, error) {
+	// create a new github client
+	client, err := github.NewClient(github.WithHTTPClient(o.Client(ctx, token)))
+	if err != nil {
+		return Identity{}, fmt.Errorf("github client: %w", err)
+	}
 	// use a new gh client, unless testing created a stub
 	c := cmp.Or[gitHubClient](
 		o.client,
-		&realGitHubClient{Client: github.NewClient(o.Client(ctx, token))},
+		&realGitHubClient{Client: client},
 	)
 
 	// get the user
