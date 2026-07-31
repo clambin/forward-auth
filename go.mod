@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	codeberg.org/clambin/go-common/cache v0.10.0
-	codeberg.org/clambin/go-common/httputils v0.4.1
+	codeberg.org/clambin/go-common/httputils v0.5.0
 	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/goccy/go-yaml v1.19.2
 	github.com/google/go-github/v89 v89.0.0
