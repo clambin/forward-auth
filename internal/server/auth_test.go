@@ -123,9 +123,9 @@ func TestForwardAuthHandler_Headers(t *testing.T) {
 	}
 }
 
-// Current:
-// BenchmarkForwardAuthHandler-10    	    9392	    126048 ns/op	  336803 B/op	    2300 allocs/op
 func BenchmarkForwardAuthHandler(b *testing.B) {
+	// Current:
+	// BenchmarkForwardAuthHandler-10    	   10123	    118111 ns/op	  333603 B/op	    2300 allocs/op
 	const cookieName = "test"
 	var fAuthn fakeAuthenticator
 	fAuthz := fakeAuthorizer{allow: true}

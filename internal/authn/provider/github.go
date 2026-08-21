@@ -25,13 +25,11 @@ func newGitHubProvider(redirectURL string, cfg GitHubConfiguration) *gitHubProvi
 		cfg.Scopes = []string{"user:email", "read:user"}
 	}
 	return &gitHubProvider{
-		Config: oauth2.Config{
-			ClientID:     cfg.ClientID,
-			ClientSecret: cfg.ClientSecret,
-			Endpoint:     endpoints.GitHub,
-			RedirectURL:  redirectURL,
-			Scopes:       cfg.Scopes,
-		},
+		ClientID:     cfg.ClientID,
+		ClientSecret: cfg.ClientSecret,
+		Endpoint:     endpoints.GitHub,
+		RedirectURL:  redirectURL,
+		Scopes:       cfg.Scopes,
 	}
 }
 
