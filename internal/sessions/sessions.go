@@ -2,11 +2,10 @@ package sessions
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"net/http"
 	"time"
+	"uuid"
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/cache"
@@ -42,23 +41,17 @@ func New(ttl time.Duration, cfg configuration.StorageConfiguration) (*Manager, e
 }
 
 // Add creates a new session for the given user info.
-func (m *Manager) Add(ctx context.Context, userInfo provider.Identity, userAgent string) (string, error) {
-	sessionID := makeRandomSessionID()
+func (m *Manager) Add(ctx context.Context, userInfo provider.Identity, userAgent string) (uuid.UUID, error) {
+	sessionID := uuid.NewV4()
 	session := Session{
 		UserInfo:  userInfo,
 		UserAgent: userAgent,
 		LastSeen:  time.Now(),
 	}
-	if err := m.Set(ctx, sessionID, session); err != nil {
-		return "", fmt.Errorf("session store: %w", err)
+	if err := m.Set(ctx, sessionID.String(), session); err != nil {
+		return uuid.UUID{}, fmt.Errorf("session store: %w", err)
 	}
 	return sessionID, nil
-}
-
-func makeRandomSessionID() string {
-	var b [32]byte
-	_, _ = rand.Read(b[:])
-	return hex.EncodeToString(b[:])
 }
 
 // Middleware returns a middleware that validates the session cookie in the HTTP request.

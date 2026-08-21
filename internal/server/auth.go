@@ -137,7 +137,7 @@ func loginHandler(
 
 		http.SetCookie(w, &http.Cookie{
 			Name:     cookieName,
-			Value:    sessionID,
+			Value:    sessionID.String(),
 			Domain:   domain,
 			Path:     "/",
 			Expires:  time.Now().Add(mgr.TTL()),

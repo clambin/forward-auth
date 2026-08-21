@@ -45,7 +45,7 @@ func TestListSessionsHandler(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodGet, tt.target, nil)
 			if tt.addCookie {
-				req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID})
+				req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID.String()})
 			}
 			resp := httptest.NewRecorder()
 			s.ServeHTTP(resp, req)
@@ -73,8 +73,8 @@ func TestDeleteSessionHandler(t *testing.T) {
 		target   string
 		wantCode int
 	}{
-		{"success", "/api/sessions/session/" + sessionIDFoo, http.StatusNoContent},
-		{"unauthorized session", "/api/sessions/session/" + sessionIDBar, http.StatusForbidden},
+		{"success", "/api/sessions/session/" + sessionIDFoo.String(), http.StatusNoContent},
+		{"unauthorized session", "/api/sessions/session/" + sessionIDBar.String(), http.StatusForbidden},
 		{"invalid session", "/api/sessions/session/invalid", http.StatusNotFound},
 	}
 
@@ -92,7 +92,7 @@ func TestDeleteSessionHandler(t *testing.T) {
 			)
 
 			req := httptest.NewRequest(http.MethodDelete, tt.target, nil)
-			req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionIDFoo2})
+			req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionIDFoo2.String()})
 			resp := httptest.NewRecorder()
 			s.ServeHTTP(resp, req)
 			require.Equal(t, tt.wantCode, resp.Code)

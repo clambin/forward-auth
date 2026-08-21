@@ -28,7 +28,7 @@ func TestSessions(t *testing.T) {
 	assert.NotZero(t, id)
 
 	// session should exist
-	session, err := m.Get(ctx, id)
+	session, err := m.Get(ctx, id.String())
 	require.NoError(t, err)
 	assert.Equal(t, "foo@example.com", session.UserInfo.Email)
 
@@ -38,11 +38,11 @@ func TestSessions(t *testing.T) {
 	assert.Len(t, sessions, 1)
 
 	// delete the session
-	err = m.Delete(ctx, id)
+	err = m.Delete(ctx, id.String())
 	require.NoError(t, err)
 
 	// session should not exist
-	_, err = m.Get(ctx, id)
+	_, err = m.Get(ctx, id.String())
 	require.ErrorIs(t, err, cache.ErrNotFound)
 }
 
@@ -77,7 +77,7 @@ func TestSessions_Middleware(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			if tt.setCookie {
 				id, _ := m.Add(t.Context(), provider.Identity{Email: "foo@example.com"}, "")
-				req.AddCookie(&http.Cookie{Name: cookieName, Value: id})
+				req.AddCookie(&http.Cookie{Name: cookieName, Value: id.String()})
 			}
 			resp := httptest.NewRecorder()
 			h.ServeHTTP(resp, req)

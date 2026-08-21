@@ -55,7 +55,7 @@ func TestForwardAuthHandler(t *testing.T) {
 			if tt.withSession {
 				sessionID, err := mgr.Add(t.Context(), provider.Identity{Email: "foo@example.com"}, "")
 				require.NoError(t, err)
-				req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID})
+				req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID.String()})
 			}
 			resp := httptest.NewRecorder()
 			s.ServeHTTP(resp, req)
@@ -111,7 +111,7 @@ func TestForwardAuthHandler_Headers(t *testing.T) {
 			req := forwardAuthRequest("/")
 			sessionID, err := mgr.Add(t.Context(), tt.userInfo, "")
 			require.NoError(t, err)
-			req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID})
+			req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID.String()})
 			resp := httptest.NewRecorder()
 			s.ServeHTTP(resp, req)
 			require.Equal(t, http.StatusOK, resp.Code)
@@ -143,7 +143,7 @@ func BenchmarkForwardAuthHandler(b *testing.B) {
 
 	sessionID, err := mgr.Add(b.Context(), provider.Identity{Email: "foo@example.com"}, "")
 	require.NoError(b, err)
-	cookie := http.Cookie{Name: cookieName, Value: sessionID}
+	cookie := http.Cookie{Name: cookieName, Value: sessionID.String()}
 	req := forwardAuthRequest("/")
 	req.AddCookie(&cookie)
 
