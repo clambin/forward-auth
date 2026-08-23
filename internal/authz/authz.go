@@ -77,8 +77,9 @@ func (a *Authorizer) Allow(u *url.URL, user string) bool {
 // GroupsForUser returns the groups that the given user belongs to.
 func (a *Authorizer) GroupsForUser(email string) []string {
 	email = strings.ToLower(email)
-	groups := make([]string, 0, len(a.groupDefinitions[email]))
-	slices.AppendSeq(groups, maps.Keys(a.groupDefinitions[email]))
+	groupsForUser := a.groupDefinitions[email]
+	groups := make([]string, 0, len(groupsForUser))
+	slices.AppendSeq(groups, maps.Keys(groupsForUser))
 	return groups
 }
 
