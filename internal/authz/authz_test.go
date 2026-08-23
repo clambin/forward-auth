@@ -1,6 +1,7 @@
 package authz
 
 import (
+	"cmp"
 	"fmt"
 	"net/url"
 	"testing"
@@ -13,6 +14,7 @@ func TestAuthorizer_Allow(t *testing.T) {
 		name   string
 		rules  []Rule
 		groups []Group
+		url    *url.URL
 		is     assert.BoolAssertionFunc
 	}{
 		{
@@ -22,6 +24,12 @@ func TestAuthorizer_Allow(t *testing.T) {
 		{
 			name:  "wildcard - match",
 			rules: []Rule{{Domain: "*.example.com", Users: []string{"foo@example.com"}}},
+			is:    assert.True,
+		},
+		{
+			name:  "url case insensitive - match",
+			rules: []Rule{{Domain: "*.example.com", Users: []string{"foo@example.com"}}},
+			url:   &url.URL{Host: "foo.Example.Com"},
 			is:    assert.True,
 		},
 		{
@@ -41,6 +49,12 @@ func TestAuthorizer_Allow(t *testing.T) {
 			is:     assert.True,
 		},
 		{
+			name:   "case-insensitive group match",
+			rules:  []Rule{{Domain: "*.example.com", Groups: []string{"users"}}},
+			groups: []Group{{Name: "USERS", Users: []string{"foo@example.com"}}},
+			is:     assert.True,
+		},
+		{
 			name:   "group mismatch",
 			rules:  []Rule{{Domain: "*.example.com", Groups: []string{"users"}}},
 			groups: []Group{{Name: "users", Users: []string{"bar@example.com"}}},
@@ -50,8 +64,9 @@ func TestAuthorizer_Allow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			u := cmp.Or(tt.url, &url.URL{Host: "foo.example.com"})
 			a := Authorizer{Rules: tt.rules, Groups: tt.groups}
-			tt.is(t, a.Allow(&url.URL{Host: "foo.example.com"}, "foo@example.com"))
+			tt.is(t, a.Allow(u, "FOO@example.com"))
 		})
 	}
 }

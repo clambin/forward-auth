@@ -1,7 +1,9 @@
 package authz
 
 import (
+	"maps"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -61,6 +63,8 @@ type Authorizer struct {
 func (a *Authorizer) Allow(u *url.URL, user string) bool {
 	// on first call, compile all rules
 	a.init.Do(a.compile)
+	// user is case-insensitive
+	user = strings.ToLower(user)
 	// evaluate all rules. if one matches, allow the request
 	for _, rule := range a.Rules {
 		if rule.match(u, user, a.groupDefinitions) {
@@ -72,10 +76,9 @@ func (a *Authorizer) Allow(u *url.URL, user string) bool {
 
 // GroupsForUser returns the groups that the given user belongs to.
 func (a *Authorizer) GroupsForUser(email string) []string {
+	email = strings.ToLower(email)
 	groups := make([]string, 0, len(a.groupDefinitions[email]))
-	for group := range a.groupDefinitions[email] {
-		groups = append(groups, group)
-	}
+	slices.AppendSeq(groups, maps.Keys(a.groupDefinitions[email]))
 	return groups
 }
 
