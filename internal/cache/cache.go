@@ -14,6 +14,9 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// maxScanKeys is the maximum number of keys to return in a single Redis scan.
+const maxScanKeys = 10
+
 var (
 	ErrNotFound = errors.New("not found")
 )
@@ -36,6 +39,8 @@ type Cache[T any] interface {
 	Delete(ctx context.Context, id string) error
 	// TTL returns the expiration time of the cache.
 	TTL() time.Duration
+	// Len returns the number of items in the cache.
+	Len(ctx context.Context) (int, error)
 }
 
 var (
@@ -118,6 +123,10 @@ func (c *localCache[T]) List(_ context.Context) (map[string]T, error) {
 	return maps.Collect(c.cache.Iterate()), nil
 }
 
+func (c *localCache[T]) Len(_ context.Context) (int, error) {
+	return c.cache.Len(), nil
+}
+
 type redisCache[T any] struct {
 	client *redis.Client
 	prefix string
@@ -179,11 +188,12 @@ func (c *redisCache[T]) TTL() time.Duration {
 }
 
 func (c *redisCache[T]) List(ctx context.Context) (map[string]T, error) {
-	keys, err := c.client.Keys(ctx, c.prefixedID("*")).Result()
+	keys, err := c.scan(ctx, c.prefixedID("*"))
 	if err != nil {
-		return nil, fmt.Errorf("redis keys: %w", err)
+		return nil, err
 	}
 	items := make(map[string]T, len(keys))
+
 	for _, key := range keys {
 		id := c.unprefixedKey(key)
 		v, err := c.Get(ctx, id)
@@ -193,6 +203,30 @@ func (c *redisCache[T]) List(ctx context.Context) (map[string]T, error) {
 		items[id] = v
 	}
 	return items, nil
+}
+
+func (c *redisCache[T]) Len(ctx context.Context) (int, error) {
+	keys, err := c.scan(ctx, c.prefixedID("*"))
+	return len(keys), err
+}
+
+func (c *redisCache[T]) scan(ctx context.Context, match string) ([]string, error) {
+	var cursor uint64
+	var keys []string
+	for {
+		// use scan rather than keys to prevent locking Redis
+		cmd := c.client.Scan(ctx, cursor, match, maxScanKeys)
+		var err error
+		var newKeys []string
+		if newKeys, cursor, err = cmd.Result(); err != nil { // && !errors.Is(err, redis.Nil) {
+			return nil, fmt.Errorf("redis scan: %w", err)
+		}
+		keys = append(keys, newKeys...)
+		if cursor == 0 {
+			break
+		}
+	}
+	return keys, nil
 }
 
 func (c *redisCache[T]) prefixedID(id string) string {

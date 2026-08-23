@@ -96,11 +96,7 @@ func (s *states) Validate(ctx context.Context, state string) (string, error) {
 }
 
 func (s *states) Len(ctx context.Context) (int, error) {
-	states, err := s.cache.List(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("list states: %w", err)
-	}
-	return len(states), nil
+	return s.cache.Len(ctx)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
