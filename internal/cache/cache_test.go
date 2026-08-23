@@ -60,12 +60,25 @@ func TestCache(t *testing.T) {
 				return errors.Is(err, ErrNotFound)
 			}, 2*ttl, time.Millisecond)
 
+			// test update doesn't affect remaining TTL
+			// note: this is a bit flaky. use syncTest?
+			require.NoError(t, c.Set(ctx, "foo", "bar"))
+			time.Sleep(ttl / 2)
+			require.NoError(t, c.Update(ctx, "foo", "baz"))
+			value, err := c.Get(ctx, "foo")
+			require.NoError(t, err)
+			assert.Equal(t, "baz", value)
+			// item should expire around original TTL, not TTL from update time
+			time.Sleep(3 * ttl / 4)
+			_, err = c.Get(ctx, "foo")
+			require.ErrorIs(t, err, ErrNotFound)
+
 			// test get-and-delete
 			require.NoError(t, c.Set(ctx, "foo", "bar"))
-			value, err := c.GetAndDelete(ctx, "foo")
+			value, err = c.GetAndDelete(ctx, "foo")
 			assert.Equal(t, "bar", value)
 			require.NoError(t, err)
-			_, err = c.Get(ctx, "foo")
+			_, err = c.GetAndDelete(ctx, "foo")
 			require.ErrorIs(t, err, ErrNotFound)
 		})
 	}

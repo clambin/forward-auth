@@ -143,8 +143,24 @@ func (c *redisCache[T]) Update(ctx context.Context, id string, val T) error {
 func (c *redisCache[T]) Get(ctx context.Context, id string) (T, error) {
 	var v T
 	value, err := c.client.Get(ctx, c.prefixedID(id)).Result()
-	if errors.Is(err, redis.Nil) {
-		return v, ErrNotFound
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			err = ErrNotFound
+		}
+		return v, err
+	}
+	err = json.Unmarshal([]byte(value), &v)
+	return v, err
+}
+
+func (c *redisCache[T]) GetAndDelete(ctx context.Context, id string) (T, error) {
+	var v T
+	value, err := c.client.GetDel(ctx, c.prefixedID(id)).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			err = ErrNotFound
+		}
+		return v, err
 	}
 	err = json.Unmarshal([]byte(value), &v)
 	return v, err
@@ -156,16 +172,6 @@ func (c *redisCache[T]) Delete(ctx context.Context, id string) error {
 		err = nil
 	}
 	return err
-}
-
-func (c *redisCache[T]) GetAndDelete(ctx context.Context, id string) (T, error) {
-	var v T
-	value, err := c.client.GetDel(ctx, c.prefixedID(id)).Result()
-	if errors.Is(err, redis.Nil) {
-		return v, ErrNotFound
-	}
-	err = json.Unmarshal([]byte(value), &v)
-	return v, err
 }
 
 func (c *redisCache[T]) TTL() time.Duration {
