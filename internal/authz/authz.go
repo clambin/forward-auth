@@ -1,7 +1,9 @@
 package authz
 
 import (
+	"maps"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -72,11 +74,7 @@ func (a *Authorizer) Allow(u *url.URL, user string) bool {
 
 // GroupsForUser returns the groups that the given user belongs to.
 func (a *Authorizer) GroupsForUser(email string) []string {
-	groups := make([]string, 0, len(a.groupDefinitions[email]))
-	for group := range a.groupDefinitions[email] {
-		groups = append(groups, group)
-	}
-	return groups
+	return slices.Collect(maps.Keys(a.groupDefinitions[email]))
 }
 
 // compile pre-compiles all rules and group definitions to optimize authorization performance.
