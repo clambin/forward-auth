@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -67,6 +68,40 @@ func TestCache(t *testing.T) {
 			require.NoError(t, err)
 			_, err = c.Get(ctx, "foo")
 			require.ErrorIs(t, err, ErrNotFound)
+
+			// quick len test
+			count, err := c.Len(context.Background())
+			require.NoError(t, err)
+			assert.Equal(t, 0, count)
 		})
 	}
+}
+
+func TestRedisCache_Len(t *testing.T) {
+	ctx := t.Context()
+	c, err := tcredis.Run(ctx, "redis:latest")
+	require.NoError(t, err)
+	endpoint, err := c.Endpoint(ctx, "")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Terminate(ctx) })
+
+	cfg := configuration.StorageConfiguration{
+		Type:  "redis",
+		Redis: configuration.StorageRedisConfiguration{Addr: endpoint},
+	}
+
+	cc, err := New[string](time.Second, "prefix", cfg)
+	require.NoError(t, err)
+
+	count, err := cc.Len(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+
+	require.NoError(t, cc.Set(context.Background(), "foo", "bar"))
+	require.NoError(t, cc.Set(context.Background(), "baz", "qux"))
+
+	count, err = cc.Len(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
+
 }
