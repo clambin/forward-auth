@@ -146,6 +146,22 @@ func (c *redisCache[T]) Get(ctx context.Context, id string) (T, error) {
 	if errors.Is(err, redis.Nil) {
 		return v, ErrNotFound
 	}
+	if err != nil {
+		return v, fmt.Errorf("redis get: %w", err)
+	}
+	err = json.Unmarshal([]byte(value), &v)
+	return v, err
+}
+
+func (c *redisCache[T]) GetAndDelete(ctx context.Context, id string) (T, error) {
+	var v T
+	value, err := c.client.GetDel(ctx, c.prefixedID(id)).Result()
+	if errors.Is(err, redis.Nil) {
+		return v, ErrNotFound
+	}
+	if err != nil {
+		return v, fmt.Errorf("redis getdel: %w", err)
+	}
 	err = json.Unmarshal([]byte(value), &v)
 	return v, err
 }
@@ -156,16 +172,6 @@ func (c *redisCache[T]) Delete(ctx context.Context, id string) error {
 		err = nil
 	}
 	return err
-}
-
-func (c *redisCache[T]) GetAndDelete(ctx context.Context, id string) (T, error) {
-	var v T
-	value, err := c.client.GetDel(ctx, c.prefixedID(id)).Result()
-	if errors.Is(err, redis.Nil) {
-		return v, ErrNotFound
-	}
-	err = json.Unmarshal([]byte(value), &v)
-	return v, err
 }
 
 func (c *redisCache[T]) TTL() time.Duration {
@@ -181,6 +187,10 @@ func (c *redisCache[T]) List(ctx context.Context) (map[string]T, error) {
 	for _, key := range keys {
 		id := c.unprefixedKey(key)
 		v, err := c.Get(ctx, id)
+		if errors.Is(err, redis.Nil) {
+			// key expired between listing it and getting its content
+			continue
+		}
 		if err != nil {
 			return nil, fmt.Errorf("redis get: %w", err)
 		}
