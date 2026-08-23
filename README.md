@@ -6,7 +6,6 @@
 [![codecov](https://img.shields.io/codecov/c/gh/clambin/forward-auth?style=plastic)](https://app.codecov.io/gh/clambin/forward-auth)
 [![Test](https://github.com/clambin/forward-auth/actions/workflows/test.yaml/badge.svg)](https://github.com/clambin/forward-auth/actions)
 [![Build](https://github.com/clambin/forward-auth/actions/workflows/build.yaml/badge.svg)](https://github.com/clambin/forward-auth/actions)
-[![go report card](https://goreportcard.com/badge/github.com/clambin/forward-auth)](https://goreportcard.com/report/github.com/clambin/forward-auth)
 [![license](https://img.shields.io/github/license/clambin/forward-auth?style=plastic)](LICENSE.md)
 
 `forward-auth` is a minimal, modern implementation of Traefik’s **forwardAuth** middleware. 
