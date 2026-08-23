@@ -27,20 +27,36 @@ function populateSessions(sessions) {
         selectAllCheckbox.checked = false;
     }
 
+    const doc = typeof document !== 'undefined' ? document : sessionTable.ownerDocument;
+
     Object.entries(sessions)
         .sort(([, a], [, b]) => new Date(b.last_seen) - new Date(a.last_seen))
         .forEach(([id, session]) => {
-        const row = (typeof document !== 'undefined' ? document : sessionTable.ownerDocument).createElement('tr');
-        row.dataset.sessionId = id;
-        const lastSeen = new Date(session.last_seen).toLocaleString();
-        row.innerHTML = `
-            <td><input type="checkbox" class="session-select"/></td>
-            <td>${session.user_info.email}</td>
-            <td>${session.user_agent}</td>
-            <td>${lastSeen}</td>
-        `;
-        tbody.appendChild(row);
-    });
+            const row = doc.createElement('tr');
+            row.dataset.sessionId = id;
+
+            const tdCheckbox = doc.createElement('td');
+            const checkbox = doc.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'session-select';
+            tdCheckbox.appendChild(checkbox);
+
+            const tdEmail = doc.createElement('td');
+            tdEmail.textContent = session.user_info?.email ?? '';
+
+            const tdUserAgent = doc.createElement('td');
+            tdUserAgent.textContent = session.user_agent ?? '';
+
+            const tdLastSeen = doc.createElement('td');
+            tdLastSeen.textContent = session.last_seen ? new Date(session.last_seen).toLocaleString() : '';
+
+            row.appendChild(tdCheckbox);
+            row.appendChild(tdEmail);
+            row.appendChild(tdUserAgent);
+            row.appendChild(tdLastSeen);
+
+            tbody.appendChild(row);
+        });
 }
 
 if (selectAllCheckbox) {
