@@ -43,6 +43,7 @@ func TestCache(t *testing.T) {
 
 			// add a value
 			require.NoError(t, c.Set(ctx, "foo", "bar"))
+
 			// list values
 			items, err := c.List(ctx)
 			require.NoError(t, err)
@@ -51,23 +52,21 @@ func TestCache(t *testing.T) {
 
 			// delete the value
 			require.NoError(t, c.Delete(ctx, "foo"))
-			// add the value again
+
+			// test expiration
 			require.NoError(t, c.Set(ctx, "foo", "bar"))
-			// wait for the value to expire
 			require.Eventually(t, func() bool {
 				_, err = c.Get(ctx, "foo")
 				return errors.Is(err, ErrNotFound)
 			}, 2*ttl, time.Millisecond)
-			// add the value again
+
+			// test get-and-delete
 			require.NoError(t, c.Set(ctx, "foo", "bar"))
-			// update the value
-			time.Sleep(ttl / 2) // this is a bit flaky. may regret this later
-			require.NoError(t, c.Update(ctx, "foo", "baz"))
-			// wait for the value to expire
-			require.Eventually(t, func() bool {
-				_, err = c.Get(ctx, "foo")
-				return errors.Is(err, ErrNotFound)
-			}, ttl, time.Millisecond)
+			value, err := c.GetAndDelete(ctx, "foo")
+			assert.Equal(t, "bar", value)
+			require.NoError(t, err)
+			_, err = c.Get(ctx, "foo")
+			require.ErrorIs(t, err, ErrNotFound)
 		})
 	}
 }
