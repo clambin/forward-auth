@@ -76,11 +76,14 @@ func (a *Authorizer) Allow(u *url.URL, user string) bool {
 
 // GroupsForUser returns the groups that the given user belongs to.
 func (a *Authorizer) GroupsForUser(email string) []string {
+	// on first call, compile all rules
+	a.init.Do(a.compile)
+	// user is case-insensitive
 	email = strings.ToLower(email)
+	// find groups that the user belongs to
 	groupsForUser := a.groupDefinitions[email]
 	groups := make([]string, 0, len(groupsForUser))
-	slices.AppendSeq(groups, maps.Keys(groupsForUser))
-	return groups
+	return slices.AppendSeq(groups, maps.Keys(groupsForUser))
 }
 
 // compile pre-compiles all rules and group definitions to optimize authorization performance.

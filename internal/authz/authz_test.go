@@ -71,6 +71,15 @@ func TestAuthorizer_Allow(t *testing.T) {
 	}
 }
 
+func TestAuthorizer_GroupsForUser(t *testing.T) {
+	a := Authorizer{Groups: []Group{
+		{Name: "users", Users: []string{"foo@example.com"}},
+		{Name: "admin", Users: []string{"bar@example.com"}},
+	}}
+	assert.Equal(t, []string{"users"}, a.GroupsForUser("FOO@example.com"))
+
+}
+
 func BenchmarkAuthorizer(b *testing.B) {
 	// Current:
 	// BenchmarkAuthorizer-10    	   49477	     22301 ns/op	       0 B/op	       0 allocs/op
