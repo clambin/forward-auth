@@ -92,7 +92,7 @@ func (s *states) Allocate(ctx context.Context, value string) (string, error) {
 }
 
 func (s *states) Validate(ctx context.Context, state string) (string, error) {
-	return s.cache.Get(ctx, state)
+	return s.cache.GetAndDelete(ctx, state)
 }
 
 func (s *states) Len(ctx context.Context) (int, error) {

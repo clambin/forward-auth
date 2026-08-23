@@ -28,6 +28,9 @@ type Cache[T any] interface {
 	List(ctx context.Context) (map[string]T, error)
 	// Get returns an item from the cache, or ErrNotFound if an item does not exist.
 	Get(ctx context.Context, id string) (T, error)
+	// GetAndDelete returns an item from the cache, or ErrNotFound if an item does not exist.
+	// The item is removed from the cache.
+	GetAndDelete(ctx context.Context, id string) (T, error)
 	// Delete removes an item from the cache. If the item does not exist, no error is returned,
 	// as the item may have expired naturally.
 	Delete(ctx context.Context, id string) error
@@ -93,6 +96,15 @@ func (c *localCache[T]) Get(_ context.Context, id string) (T, error) {
 	return value, err
 }
 
+func (c *localCache[T]) GetAndDelete(_ context.Context, id string) (T, error) {
+	var err error
+	value, ok := c.cache.GetAndRemove(id)
+	if !ok {
+		err = ErrNotFound
+	}
+	return value, err
+}
+
 func (c *localCache[T]) Delete(_ context.Context, id string) error {
 	c.cache.Remove(id)
 	return nil
@@ -144,6 +156,16 @@ func (c *redisCache[T]) Delete(ctx context.Context, id string) error {
 		err = nil
 	}
 	return err
+}
+
+func (c *redisCache[T]) GetAndDelete(ctx context.Context, id string) (T, error) {
+	var v T
+	value, err := c.client.GetDel(ctx, c.prefixedID(id)).Result()
+	if errors.Is(err, redis.Nil) {
+		return v, ErrNotFound
+	}
+	err = json.Unmarshal([]byte(value), &v)
+	return v, err
 }
 
 func (c *redisCache[T]) TTL() time.Duration {
