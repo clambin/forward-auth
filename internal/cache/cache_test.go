@@ -62,7 +62,8 @@ func TestCache(t *testing.T) {
 
 			// test get-and-delete
 			require.NoError(t, c.Set(ctx, "foo", "bar"))
-			_, err = c.GetAndDelete(ctx, "foo")
+			value, err := c.GetAndDelete(ctx, "foo")
+			assert.Equal(t, "bar", value)
 			require.NoError(t, err)
 			_, err = c.Get(ctx, "foo")
 			require.ErrorIs(t, err, ErrNotFound)
