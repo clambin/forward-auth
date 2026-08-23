@@ -21,10 +21,11 @@ func (r Rule) match(u *url.URL, user string, groupDefinitions map[string]map[str
 }
 
 func (r Rule) matchDomain(u *url.URL) bool {
+	domain := strings.ToLower(u.Hostname())
 	if !strings.HasPrefix(r.Domain, "*.") {
-		return strings.EqualFold(u.Host, r.Domain)
+		return strings.EqualFold(domain, r.Domain)
 	}
-	return strings.HasSuffix(strings.ToLower(u.Host), r.Domain[1:])
+	return strings.HasSuffix(domain, r.Domain[1:])
 }
 
 func (r Rule) matchUser(user string) bool {
@@ -38,7 +39,7 @@ func (r Rule) matchUser(user string) bool {
 
 func (r Rule) matchGroup(user string, groupDefinitions map[string]map[string]struct{}) bool {
 	for _, g := range r.Groups {
-		if _, ok := groupDefinitions[user][g]; ok {
+		if _, ok := groupDefinitions[strings.ToLower(user)][g]; ok {
 			return true
 		}
 	}

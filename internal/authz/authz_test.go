@@ -13,37 +13,63 @@ func TestAuthorizer_Allow(t *testing.T) {
 		name   string
 		rules  []Rule
 		groups []Group
+		url    *url.URL
 		is     assert.BoolAssertionFunc
 	}{
 		{
 			name: "no rules",
+			url:  &url.URL{Host: "foo.example.com"},
 			is:   assert.False,
+		},
+		{
+			name:  "port - match",
+			rules: []Rule{{Domain: "*.example.com", Users: []string{"foo@example.com"}}},
+			url:   &url.URL{Host: "foo.example.com:443"},
+			is:    assert.True,
+		},
+		{
+			name:  "uppercase - match",
+			rules: []Rule{{Domain: "*.EXAMPLE.COM", Users: []string{"foo@example.com"}}},
+			url:   &url.URL{Host: "foo.example.com:443"},
+			is:    assert.True,
 		},
 		{
 			name:  "wildcard - match",
 			rules: []Rule{{Domain: "*.example.com", Users: []string{"foo@example.com"}}},
+			url:   &url.URL{Host: "foo.example.com"},
 			is:    assert.True,
 		},
 		{
 			name:  "wildcard - mismatch",
 			rules: []Rule{{Domain: "*.example.org", Users: []string{"foo@example.org"}}},
+			url:   &url.URL{Host: "foo.example.com"},
 			is:    assert.False,
 		},
 		{
 			name:  "user mismatch",
 			rules: []Rule{{Domain: "*.example.com", Users: []string{"bar@example.com"}}},
+			url:   &url.URL{Host: "foo.example.com"},
 			is:    assert.False,
 		},
 		{
 			name:   "group match",
 			rules:  []Rule{{Domain: "*.example.com", Groups: []string{"users"}}},
 			groups: []Group{{Name: "users", Users: []string{"foo@example.com"}}},
+			url:    &url.URL{Host: "foo.example.com"},
+			is:     assert.True,
+		},
+		{
+			name:   "uppercase group  match",
+			rules:  []Rule{{Domain: "*.example.com", Groups: []string{"USERS"}}},
+			groups: []Group{{Name: "users", Users: []string{"foo@example.com"}}},
+			url:    &url.URL{Host: "foo.example.com"},
 			is:     assert.True,
 		},
 		{
 			name:   "group mismatch",
 			rules:  []Rule{{Domain: "*.example.com", Groups: []string{"users"}}},
 			groups: []Group{{Name: "users", Users: []string{"bar@example.com"}}},
+			url:    &url.URL{Host: "foo.example.com"},
 			is:     assert.False,
 		},
 	}
@@ -51,14 +77,14 @@ func TestAuthorizer_Allow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			a := Authorizer{Rules: tt.rules, Groups: tt.groups}
-			tt.is(t, a.Allow(&url.URL{Host: "foo.example.com"}, "foo@example.com"))
+			tt.is(t, a.Allow(tt.url, "foo@Example.Com"))
 		})
 	}
 }
 
 func BenchmarkAuthorizer(b *testing.B) {
 	// Current:
-	// BenchmarkAuthorizer-10    	   49477	     22301 ns/op	       0 B/op	       0 allocs/op
+	// BenchmarkAuthorizer-10    	   24308	     48903 ns/op	       0 B/op	       0 allocs/op
 	const n = 1000
 	users := make([]string, n)
 	for i := range n {
@@ -85,7 +111,7 @@ func BenchmarkAuthorizer(b *testing.B) {
 
 func BenchmarkAuthorizer_Groups(b *testing.B) {
 	// Current:
-	// BenchmarkAuthorizer_Groups-10    	   56505	     20590 ns/op	       6 B/op	       0 allocs/op
+	// BenchmarkAuthorizer_Groups-10    	   25555	     48206 ns/op	      14 B/op	       0 allocs/op
 	const n = 1000
 	users := make([]string, n)
 	for i := range n {
