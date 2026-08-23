@@ -3,7 +3,10 @@ package sessions
 import (
 	"context"
 	"fmt"
+	"iter"
+	"maps"
 	"net/http"
+	"sync"
 	"time"
 	"uuid"
 
@@ -28,13 +31,7 @@ type Session struct {
 // Most of the methods are implemented by the underlying cache.Cache interface.
 type Manager struct {
 	cache.Cache[Session]
-	ch       chan updateRequest
-	toUpdate map[string]Session
-}
-
-type updateRequest struct {
-	SessionID string
-	Session   Session
+	sessionUpdateRequests
 }
 
 // New create a new session Manager for the given configuration.
@@ -47,8 +44,7 @@ func New(ttl time.Duration, cfg configuration.StorageConfiguration) (*Manager, e
 	}
 	m := Manager{
 		Cache:    store,
-		ch:       make(chan updateRequest),
-		toUpdate: make(map[string]Session),
+		requests: make(map[string]Session),
 	}
 	return &m, nil
 }
@@ -63,17 +59,12 @@ func (m *Manager) Run(ctx context.Context) error {
 		select {
 		case <-updateTicker.C:
 			// write all queued updates to the cache
-			for sessionID, session := range m.toUpdate {
-				if err := m.Set(ctx, sessionID, session); err != nil {
+			for sessionID, session := range m.pending() {
+				if err := m.Update(ctx, sessionID, session); err != nil {
 					return fmt.Errorf("session store: %w", err)
 				}
-				delete(m.toUpdate, sessionID)
+				m.del(sessionID)
 			}
-		case req := <-m.ch:
-			// queue the update request
-			// note: all updates to toUpdate happen in this function, in one go routine.
-			// so no need for a mutex.
-			m.toUpdate[req.SessionID] = req.Session
 		case <-ctx.Done():
 			return nil
 		}
@@ -111,7 +102,7 @@ func (m *Manager) Middleware(cookieName string, strict bool) func(handler http.H
 				session.LastSeen = time.Now()
 				session.UserAgent = r.UserAgent()
 				// queue the update request
-				m.ch <- updateRequest{SessionID: sessionID, Session: session}
+				m.add(sessionID, session)
 
 				// add the session to the request context
 				r = r.Clone(ctxWithSession(r.Context(), sessionID, session))
@@ -150,4 +141,35 @@ func SessionFromCtx(ctx context.Context) (string, Session, bool) {
 // ctxWithSession returns a new context with the given session ID and session data.
 func ctxWithSession(ctx context.Context, sessionID string, session Session) context.Context {
 	return context.WithValue(ctx, sessionCtxKey{}, sessionInfo{sessionID: sessionID, session: session})
+}
+
+type sessionUpdateRequests struct {
+	requests map[string]Session
+	mu       sync.Mutex
+}
+
+func (s *sessionUpdateRequests) add(sessionID string, session Session) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.requests[sessionID] = session
+}
+
+func (s *sessionUpdateRequests) del(sessionID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.requests, sessionID)
+}
+
+func (s *sessionUpdateRequests) pending() iter.Seq2[string, Session] {
+	// get all pending requests. use a copy so we don't lock the map while we're performing the updates
+	s.mu.Lock()
+	requests := maps.Clone(s.requests)
+	s.mu.Unlock()
+	return func(yield func(string, Session) bool) {
+		for sessionID, session := range requests {
+			if !yield(sessionID, session) {
+				return
+			}
+		}
+	}
 }

@@ -84,7 +84,7 @@ func TestAuthorizer_Allow(t *testing.T) {
 
 func BenchmarkAuthorizer(b *testing.B) {
 	// Current:
-	// BenchmarkAuthorizer-10    	   24308	     48903 ns/op	       0 B/op	       0 allocs/op
+	// BenchmarkAuthorizer-10    	   26914	     43314 ns/op	       0 B/op	       0 allocs/op
 	const n = 1000
 	users := make([]string, n)
 	for i := range n {
@@ -111,7 +111,7 @@ func BenchmarkAuthorizer(b *testing.B) {
 
 func BenchmarkAuthorizer_Groups(b *testing.B) {
 	// Current:
-	// BenchmarkAuthorizer_Groups-10    	   25555	     48206 ns/op	      14 B/op	       0 allocs/op
+	// BenchmarkAuthorizer_Groups-10    	   29460	     41312 ns/op	      12 B/op	       0 allocs/op
 	const n = 1000
 	users := make([]string, n)
 	for i := range n {

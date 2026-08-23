@@ -75,7 +75,8 @@ func (a *Authorizer) Allow(u *url.URL, user string) bool {
 
 // GroupsForUser returns the groups that the given user belongs to.
 func (a *Authorizer) GroupsForUser(email string) []string {
-	return slices.Collect(maps.Keys(a.groupDefinitions[email]))
+	groups := make([]string, 0, len(a.groupDefinitions[email]))
+	return slices.AppendSeq(groups, maps.Keys(a.groupDefinitions[email]))
 }
 
 // compile pre-compiles all rules and group definitions to optimize authorization performance.
