@@ -2,6 +2,8 @@ codeberg.org/clambin/go-common/cache v0.10.0 h1:yxe776W5lC3357LB7CQQ4Xd663xhtNEE
 codeberg.org/clambin/go-common/cache v0.10.0/go.mod h1:XLosTvfQ+AuqK44fcf7pK9fD8B83skqM+QI5pu3P1v0=
 codeberg.org/clambin/go-common/httputils v0.5.0 h1:pMOBcSJa0lPWEVxkiv5ntlnZtUtKW6K/ZVtuCNjG8Oc=
 codeberg.org/clambin/go-common/httputils v0.5.0/go.mod h1:ZDkClJ2+/6iVHRg5Y7QyRnl8pFeiRcYlhatwwkfmqDU=
+codeberg.org/clambin/go-common/httputils v0.5.1 h1:Uj2JB4JstOhJIp9tKwlzsQjY8D+FRdL1vbnUdH0sjl0=
+codeberg.org/clambin/go-common/httputils v0.5.1/go.mod h1:HLt+R1Lu8EvHdZ6nlMr/aYMT+5CqCXdo3zSTvdzeZRY=
 dario.cat/mergo v1.0.2 h1:85+piFYR1tMbRrLcDwR18y4UKJ3aH1Tbzi24VRW1TK8=
 dario.cat/mergo v1.0.2/go.mod h1:E/hbnu0NxMFBjpMIE34DRGLWqDy0g5FuKDhCb31ngxA=
 github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 h1:He8afgbRMd7mFxO99hRNu+6tazq8nFF9lIwo9JFroBk=
