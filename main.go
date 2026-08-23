@@ -77,6 +77,8 @@ func main() {
 	g.Go(func() error {
 		return cfg.Prometheus.RunServer(ctx)
 	})
+	// Session Manager
+	go func() { _ = sessionMgr.Run(ctx) }()
 	// forward-auth
 	g.Go(func() error {
 		return httputils.RunServer(ctx, &http.Server{

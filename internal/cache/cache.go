@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -211,22 +212,25 @@ func (c *redisCache[T]) Len(ctx context.Context) (int, error) {
 }
 
 func (c *redisCache[T]) scan(ctx context.Context, match string) ([]string, error) {
+	// collect keys in a map so we can deduplicate
+	keys := make(map[string]struct{})
 	var cursor uint64
-	var keys []string
 	for {
-		// use scan rather than keys to prevent locking Redis
+		// use iterative scan rather than keys to reduce locking Redis
 		cmd := c.client.Scan(ctx, cursor, match, maxScanKeys)
 		var err error
 		var newKeys []string
 		if newKeys, cursor, err = cmd.Result(); err != nil { // && !errors.Is(err, redis.Nil) {
 			return nil, fmt.Errorf("redis scan: %w", err)
 		}
-		keys = append(keys, newKeys...)
+		for _, key := range newKeys {
+			keys[key] = struct{}{}
+		}
 		if cursor == 0 {
 			break
 		}
 	}
-	return keys, nil
+	return slices.Collect(maps.Keys(keys)), nil
 }
 
 func (c *redisCache[T]) prefixedID(id string) string {

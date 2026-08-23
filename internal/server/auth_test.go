@@ -40,6 +40,7 @@ func TestForwardAuthHandler(t *testing.T) {
 			var fAuthn fakeAuthenticator
 			fAuthz := fakeAuthorizer{allow: tt.allow}
 			mgr, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
+			go func() { _ = mgr.Run(t.Context()) }()
 
 			s := New(
 				configuration.ServerConfiguration{CookieName: cookieName, Domain: "example.com"},
@@ -97,6 +98,7 @@ func TestForwardAuthHandler_Headers(t *testing.T) {
 			var fAuthn fakeAuthenticator
 			fAuthz := fakeAuthorizer{allow: true, groups: tt.groups}
 			mgr, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
+			go func() { _ = mgr.Run(t.Context()) }()
 
 			s := New(
 				configuration.ServerConfiguration{CookieName: cookieName, Domain: "example.com"},
@@ -140,6 +142,7 @@ func BenchmarkForwardAuthHandler(b *testing.B) {
 		&fakeMetrics{},
 		slog.New(slog.DiscardHandler),
 	)
+	go func() { _ = mgr.Run(b.Context()) }()
 
 	sessionID, err := mgr.Add(b.Context(), provider.Identity{Email: "foo@example.com"}, "")
 	require.NoError(b, err)

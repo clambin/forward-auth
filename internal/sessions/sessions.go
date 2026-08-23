@@ -14,6 +14,7 @@ import (
 
 const (
 	sessionKeyPrefix = "forward-auth-session"
+	updateInterval   = time.Minute
 )
 
 // Session represents a user session.
@@ -27,6 +28,13 @@ type Session struct {
 // Most of the methods are implemented by the underlying cache.Cache interface.
 type Manager struct {
 	cache.Cache[Session]
+	ch       chan updateRequest
+	toUpdate map[string]Session
+}
+
+type updateRequest struct {
+	SessionID string
+	Session   Session
 }
 
 // New create a new session Manager for the given configuration.
@@ -37,7 +45,39 @@ func New(ttl time.Duration, cfg configuration.StorageConfiguration) (*Manager, e
 	if err != nil {
 		return nil, fmt.Errorf("session store: %w", err)
 	}
-	return &Manager{Cache: store}, nil
+	m := Manager{
+		Cache:    store,
+		ch:       make(chan updateRequest),
+		toUpdate: make(map[string]Session),
+	}
+	return &m, nil
+}
+
+// Run is a background task for the Manager.  It updates the session on a regular interval.
+// This prevents a cache write operation for every authenticated request.
+func (m *Manager) Run(ctx context.Context) error {
+	updateTicker := time.NewTicker(updateInterval)
+	defer updateTicker.Stop()
+
+	for {
+		select {
+		case <-updateTicker.C:
+			// write all queued updates to the cache
+			for sessionID, session := range m.toUpdate {
+				if err := m.Set(ctx, sessionID, session); err != nil {
+					return fmt.Errorf("session store: %w", err)
+				}
+				delete(m.toUpdate, sessionID)
+			}
+		case req := <-m.ch:
+			// queue the update request
+			// note: all updates to toUpdate happen in this function, in one go routine.
+			// so no need for a mutex.
+			m.toUpdate[req.SessionID] = req.Session
+		case <-ctx.Done():
+			return nil
+		}
+	}
 }
 
 // Add creates a new session for the given user info.
@@ -67,13 +107,13 @@ func (m *Manager) Middleware(cookieName string, strict bool) func(handler http.H
 				return
 			}
 			if err == nil {
-				// update the session's lastSeen and userAgent fields without affecting expiration.
+				// update the session's lastSeen and userAgent fields
 				session.LastSeen = time.Now()
 				session.UserAgent = r.UserAgent()
-				if err = m.Update(r.Context(), sessionID, session); err != nil {
-					http.Error(w, "failed to update session", http.StatusInternalServerError)
-					return
-				}
+				// queue the update request
+				m.ch <- updateRequest{SessionID: sessionID, Session: session}
+
+				// add the session to the request context
 				r = r.Clone(ctxWithSession(r.Context(), sessionID, session))
 			}
 			next.ServeHTTP(w, r)

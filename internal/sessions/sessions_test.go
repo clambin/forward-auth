@@ -1,9 +1,11 @@
 package sessions
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
@@ -66,6 +68,13 @@ func TestSessions_Middleware(t *testing.T) {
 			m, err := New(5*time.Minute, configuration.StorageConfiguration{})
 			require.NoError(t, err)
 
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
+			go func() {
+				_ = m.Run(ctx)
+			}()
+
 			h := m.Middleware(cookieName, tt.strict)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				_, _, ok := SessionFromCtx(r.Context())
 				tt.wantSession(t, ok)
@@ -84,4 +93,35 @@ func TestSessions_Middleware(t *testing.T) {
 			assert.Equal(t, tt.wantStatusCode, resp.Code)
 		})
 	}
+}
+
+func TestSessions_Writer(t *testing.T) {
+	m, err := New(5*time.Minute, configuration.StorageConfiguration{})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	go func() { _ = m.Run(ctx) }()
+
+	const cookieName = "session"
+
+	h := m.Middleware(cookieName, false)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _, ok := SessionFromCtx(r.Context())
+		assert.True(t, ok)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	id, _ := m.Add(t.Context(), provider.Identity{Email: "foo@example.com"}, "foo")
+	req.AddCookie(&http.Cookie{Name: cookieName, Value: id.String()})
+
+	resp := httptest.NewRecorder()
+	h.ServeHTTP(resp, req)
+	assert.Equal(t, http.StatusOK, resp.Code)
+
+	synctest.Test(t, func(t *testing.T) {
+		time.Sleep(5 * updateInterval)
+		session, err := m.Get(ctx, id.String())
+		require.NoError(t, err)
+		assert.Equal(t, "foo", session.UserAgent)
+	})
 }
