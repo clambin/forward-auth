@@ -179,6 +179,9 @@ func (c *redisCache[T]) TTL() time.Duration {
 }
 
 func (c *redisCache[T]) List(ctx context.Context) (map[string]T, error) {
+	// Keys() is quite heavy on a redis server and locks the single-threaded server while getting all matching keys.
+	// Better: perform an iterative Scan() to get all matching keys.
+	// For small installations, with low number of keys, it's not really a big problem.
 	keys, err := c.client.Keys(ctx, c.prefixedID("*")).Result()
 	if err != nil {
 		return nil, fmt.Errorf("redis keys: %w", err)
@@ -187,7 +190,7 @@ func (c *redisCache[T]) List(ctx context.Context) (map[string]T, error) {
 	for _, key := range keys {
 		id := c.unprefixedKey(key)
 		v, err := c.Get(ctx, id)
-		if errors.Is(err, redis.Nil) {
+		if errors.Is(err, ErrNotFound) {
 			// key expired between listing it and getting its content
 			continue
 		}
