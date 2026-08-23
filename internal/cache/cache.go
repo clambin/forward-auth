@@ -198,6 +198,10 @@ func (c *redisCache[T]) List(ctx context.Context) (map[string]T, error) {
 	for _, key := range keys {
 		id := c.unprefixedKey(key)
 		v, err := c.Get(ctx, id)
+		if errors.Is(err, redis.Nil) {
+			// key was deleted after scan
+			continue
+		}
 		if err != nil {
 			return nil, fmt.Errorf("redis get: %w", err)
 		}
