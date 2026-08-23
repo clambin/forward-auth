@@ -141,6 +141,8 @@ that is passed via an **HTTP cookie**.
     - `local` (in-memory)
     - `redis`
 
+Note: Redis must be 6.2 or higher.
+
 #### Session Cookie
 
 - Stored in browser

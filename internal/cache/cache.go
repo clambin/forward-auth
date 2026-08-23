@@ -28,8 +28,8 @@ type Cache[T any] interface {
 	List(ctx context.Context) (map[string]T, error)
 	// Get returns an item from the cache, or ErrNotFound if an item does not exist.
 	Get(ctx context.Context, id string) (T, error)
-	// GetAndDelete returns an item from the cache, or ErrNotFound if an item does not exist.
-	// The item is removed from the cache.
+	// GetAndDelete atomically returns and removes an item from the cache
+	// or returns ErrNotFound if an item does not exist.
 	GetAndDelete(ctx context.Context, id string) (T, error)
 	// Delete removes an item from the cache. If the item does not exist, no error is returned,
 	// as the item may have expired naturally.
