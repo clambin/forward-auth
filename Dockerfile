@@ -19,6 +19,7 @@ FROM alpine
 WORKDIR /app
 COPY --from=builder /app/forward-auth /app/forward-auth
 
+RUN apk add --no-cache tzdata
 RUN /usr/sbin/addgroup app
 RUN /usr/sbin/adduser app -G app -D
 USER app
