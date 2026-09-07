@@ -5,7 +5,7 @@ go 1.27
 require (
 	codeberg.org/clambin/go-common/cache v0.10.0
 	codeberg.org/clambin/go-common/httputils v0.5.1
-	github.com/coreos/go-oidc/v3 v3.20.0
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/goccy/go-yaml v1.19.2
 	github.com/google/go-github/v90 v90.0.0
 	github.com/oauth2-proxy/mockoidc v0.0.0-20240214162133-caebfff84d25
