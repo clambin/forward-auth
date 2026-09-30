@@ -33,7 +33,7 @@ func forwardAuthHandler(
 		_, u := originalRequest(r)
 
 		// get the session added by the session validator middleware
-		_, session, ok := sessions.SessionFromCtx(r.Context())
+		_, session, ok := sessions.UserSessionFromCtx(r.Context())
 
 		// no valid session cookie found: redirect to login page
 		if !ok {
@@ -102,7 +102,7 @@ func loginHandler(
 	cookieName string,
 	domain string,
 	authenticator Authenticator,
-	mgr *sessions.Manager,
+	mgr *sessions.UserSessionManager,
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

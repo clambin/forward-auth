@@ -8,17 +8,17 @@ import (
 
 var sessionCountMetric = prometheus.NewDesc("forward_auth_session_count", "Number of active sessions", nil, nil)
 
-var _ prometheus.Collector = InstrumentedManager{}
+var _ prometheus.Collector = InstrumentedUserSessionManager{}
 
-type InstrumentedManager struct {
-	*Manager
+type InstrumentedUserSessionManager struct {
+	*UserSessionManager
 }
 
-func (i InstrumentedManager) Describe(ch chan<- *prometheus.Desc) {
+func (i InstrumentedUserSessionManager) Describe(ch chan<- *prometheus.Desc) {
 	ch <- sessionCountMetric
 }
 
-func (i InstrumentedManager) Collect(ch chan<- prometheus.Metric) {
+func (i InstrumentedUserSessionManager) Collect(ch chan<- prometheus.Metric) {
 	sessions, err := i.List(context.Background())
 	if err != nil {
 		return

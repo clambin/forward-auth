@@ -55,7 +55,7 @@ func TestListSessionsHandler(t *testing.T) {
 				return
 			}
 
-			var l map[string]sessions.Session
+			var l map[string]sessions.UserSession
 			require.NoError(t, json.NewDecoder(resp.Body).Decode(&l))
 			assert.Len(t, l, tt.wantSessionCount)
 		})

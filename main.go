@@ -68,7 +68,7 @@ func main() {
 	metrics := middleware.GetMetrics()
 	prometheus.MustRegister(
 		metrics,
-		sessions.InstrumentedManager{Manager: sessionMgr},
+		sessions.InstrumentedUserSessionManager{UserSessionManager: sessionMgr},
 		authn.InstrumentedAuthenticator{Authenticator: authenticator},
 	)
 

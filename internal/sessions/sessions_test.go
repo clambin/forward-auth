@@ -67,7 +67,7 @@ func TestSessions_Middleware(t *testing.T) {
 			require.NoError(t, err)
 
 			h := m.Middleware(cookieName, tt.strict)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				_, _, ok := SessionFromCtx(r.Context())
+				_, _, ok := UserSessionFromCtx(r.Context())
 				tt.wantSession(t, ok)
 				if !ok {
 					http.Error(w, "no valid session cookie found", http.StatusForbidden)

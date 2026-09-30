@@ -12,10 +12,10 @@ import (
 )
 
 // getSessionsHandler returns a list of all sessions for the user.
-func getSessionsHandler(sessionManager *sessions.Manager, _ *slog.Logger) http.Handler {
+func getSessionsHandler(sessionManager *sessions.UserSessionManager, _ *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// session validation runs in strict mode, so handler is only called if the session is valid
-		_, session, _ := sessions.SessionFromCtx(r.Context())
+		_, session, _ := sessions.UserSessionFromCtx(r.Context())
 		allSessions, err := sessionManager.List(r.Context())
 		if err != nil {
 			http.Error(w, "failed to list sessions", http.StatusInternalServerError)
@@ -23,7 +23,7 @@ func getSessionsHandler(sessionManager *sessions.Manager, _ *slog.Logger) http.H
 		}
 		// only return sessions belonging to the user
 		userSessions := maps.Clone(allSessions)
-		maps.DeleteFunc(userSessions, func(k string, v sessions.Session) bool {
+		maps.DeleteFunc(userSessions, func(k string, v sessions.UserSession) bool {
 			return v.UserInfo.Email != session.UserInfo.Email
 		})
 		w.Header().Set("Content-Type", "application/json")
@@ -34,10 +34,10 @@ func getSessionsHandler(sessionManager *sessions.Manager, _ *slog.Logger) http.H
 }
 
 // deleteSessionHandler deletes a session. If the requested session does not belong to the user, the request is rejected.
-func deleteSessionHandler(sessionManager *sessions.Manager, logger *slog.Logger) http.Handler {
+func deleteSessionHandler(sessionManager *sessions.UserSessionManager, logger *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// session validation runs in struct mode, so this is only called if the session is valid
-		_, mySession, _ := sessions.SessionFromCtx(r.Context())
+		_, mySession, _ := sessions.UserSessionFromCtx(r.Context())
 		sessionID := r.PathValue("id")
 		session, err := sessionManager.Get(r.Context(), sessionID)
 		if errors.Is(err, cache.ErrNotFound) {

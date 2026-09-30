@@ -16,7 +16,7 @@ func TestInstrumentedManager(t *testing.T) {
 	_, _ = sessionManager.Add(t.Context(), provider.Identity{Email: "foo@example.com"}, "")
 
 	require.NoError(t, testutil.CollectAndCompare(
-		InstrumentedManager{sessionManager},
+		InstrumentedUserSessionManager{UserSessionManager: sessionManager},
 		strings.NewReader(`
 # HELP forward_auth_session_count Number of active sessions
 # TYPE forward_auth_session_count gauge

@@ -189,27 +189,43 @@ func (c *redisCache[T]) TTL() time.Duration {
 }
 
 func (c *redisCache[T]) List(ctx context.Context) (map[string]T, error) {
-	// Keys() is quite heavy on a redis server and locks the single-threaded server while getting all matching keys.
-	// Better: perform an iterative Scan() to get all matching keys.
-	// For small installations, with low number of keys, it's not really a big problem.
 	keys, err := c.scan(ctx, c.prefixedID("*"))
 	if err != nil {
 		return nil, err
 	}
-	items := make(map[string]T, len(keys))
 
-	for _, key := range keys {
-		id := c.unprefixedKey(key)
-		v, err := c.Get(ctx, id)
-		if errors.Is(err, ErrNotFound) {
-			// key expired between listing it and getting its content
+	// instead of iterating over all keys and performing a GET for each key,
+	// we can use a pipeline to get all values in a single request
+	items := make(map[string]T, len(keys))
+	pipe := c.client.Pipeline()
+	cmds := make([]*redis.StringCmd, len(keys))
+	for i, key := range keys {
+		cmds[i] = pipe.Get(ctx, key)
+	}
+
+	// run the pipeline
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+		return nil, fmt.Errorf("redis get: %w", err)
+	}
+
+	// collect the results
+	for i, cmd := range cmds {
+		if errors.Is(cmd.Err(), redis.Nil) {
+			// Key expired between SCAN and GET.
 			continue
 		}
-		if err != nil {
+		if err := cmd.Err(); err != nil {
 			return nil, fmt.Errorf("redis get: %w", err)
 		}
-		items[id] = v
+
+		var v T
+		if err := json.Unmarshal([]byte(cmd.Val()), &v); err != nil {
+			return nil, fmt.Errorf("json: unmarshal %q: %w", keys[i], err)
+		}
+		// these are raw Redis gets, so need to strip the prefix
+		items[c.unprefixedKey(keys[i])] = v
 	}
+
 	return items, nil
 }
 
