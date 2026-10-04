@@ -89,7 +89,9 @@ type TokenManager struct {
 }
 
 type RefreshTokenDetails struct {
-	provider.Identity
+	provider.Identity `json:"identity"`
+	IssuedAt          time.Time `json:"issuedAt"`
+	Generation        int       `json:"generation"`
 }
 
 func NewTokenManager(ttl time.Duration, cfg configuration.StorageConfiguration) (*TokenManager, error) {
@@ -111,7 +113,7 @@ func (t *TokenManager) Validate(ctx context.Context, token *Token) (*Token, erro
 	}
 
 	// the token itself has expired.  if the refresh token is also expired, return an error.
-	currentRefreshToken, err := t.Get(ctx, token.RefreshToken)
+	currentRefreshTokenDetails, err := t.Get(ctx, token.RefreshToken)
 	if err != nil {
 		if errors.Is(err, cache.ErrNotFound) {
 			return nil, fmt.Errorf("token not found or expired")
@@ -121,17 +123,18 @@ func (t *TokenManager) Validate(ctx context.Context, token *Token) (*Token, erro
 
 	// check that the refreshToken is associated with the current user
 	// TODO: this should always be the case
-	if currentRefreshToken.Email != token.Identity.Email {
+	if currentRefreshTokenDetails.Email != token.Identity.Email {
 		return nil, fmt.Errorf("refresh token not associated with current user")
 	}
 
 	// TODO: maybe do a singleflight for allocating and the refresh token and only then creating the Token.
 	// Right now, we expire the old token after a couple of seconds to allow for concurrent requests.
 
-	newToken, err := t.Token(ctx, token.Identity)
+	newToken, err := t.cycleToken(ctx, token.Identity, currentRefreshTokenDetails.Generation+1)
 	if err != nil {
 		return nil, fmt.Errorf("token: %w", err)
 	}
+
 	// expire the old refreshToken after a couple of seconds to handle any concurrent requests
 	err = t.Expire(ctx, token.RefreshToken, refreshTokenSundownDuration)
 	if err != nil {
@@ -142,10 +145,17 @@ func (t *TokenManager) Validate(ctx context.Context, token *Token) (*Token, erro
 	return newToken, nil
 }
 
+// Token returns a new token with a new refresh token for the given identity.
 func (t *TokenManager) Token(ctx context.Context, id provider.Identity) (*Token, error) {
+	return t.cycleToken(ctx, id, 1)
+}
+
+func (t *TokenManager) cycleToken(ctx context.Context, id provider.Identity, generation int) (*Token, error) {
 	refreshTokenID := generateRefreshToken()
 	err := t.Set(ctx, refreshTokenID, RefreshTokenDetails{
-		Identity: id,
+		Identity:   id,
+		IssuedAt:   time.Now(),
+		Generation: generation,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("refresh token: %w", err)
