@@ -63,31 +63,37 @@ func handleForwardAuth(
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// restore original request
+		originalMethod, originalURL := originalRequest(r)
+
+		// request logger
+		reqLogger := logger.With(slog.Group("request",
+			slog.String("method", originalMethod),
+			slog.String("url", originalURL.Scheme),
+		))
+
 		// redirect to login page
 		// TODO: this ignores the original method. Should we limit this to GET requests?
 		redirectToLogin := func(originalURL *url.URL) {
 			redirectURL, err := authenticator.InitiateLogin(r.Context(), originalURL.String())
 			if err != nil {
-				logger.Error("failed to initiate login", "err", err)
+				reqLogger.Error("failed to initiate login", slog.Any("err", err))
 				http.Error(w, "failed to initiate login", http.StatusInternalServerError)
 				return
 			}
 			http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 		}
 
-		// restore original request
-		_, originalURL := originalRequest(r)
-
 		// get the jwt token
 		cookie, err := r.Cookie(cookieName)
 		if err != nil {
-			logger.Error("failed to retrieve cookie", "err", err)
+			reqLogger.Error("failed to retrieve cookie", slog.Any("err", err))
 			redirectToLogin(originalURL)
 			return
 		}
 		tok, err := token.ParseToken(cookie.Value, key)
 		if err != nil {
-			logger.Error("failed to parse cookie", "err", err)
+			reqLogger.Error("failed to parse cookie", slog.Any("err", err))
 			redirectToLogin(originalURL)
 			return
 		}
@@ -95,20 +101,20 @@ func handleForwardAuth(
 		// validate the token
 		if tok, err = tokenManager.Validate(r.Context(), tok); err != nil {
 			// token was invalid or expired and not refreshable. Redirect to login
-			logger.Error("invalid token in cookie", "err", err, "cookie", cookieName)
+			reqLogger.Error("invalid token in cookie", slog.Any("err", err), slog.String("cookie", cookieName))
 			redirectToLogin(originalURL)
 			return
 		}
 
 		// authorize the request
 		if !authorizer.Allow(originalURL, tok.Identity.Email) {
-			logger.Warn("forbidden", "url", originalURL, "id", tok.Identity)
-			http.Error(w, "forbidden", http.StatusForbidden)
+			reqLogger.Warn("request forbidden by authorizer", slog.Any("id", tok.Identity))
+			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 
 		// authorize the request
-		setUserHeaders(w, tok, authorizer.GroupsForUser(tok.Subject))
+		setUserHeaders(w, tok, authorizer.GroupsForUser(tok.Identity.Email))
 		w.WriteHeader(http.StatusOK)
 	})
 }
@@ -151,14 +157,14 @@ func handleLogin(
 		// create a token for the new session
 		tok, err := tokenManager.Token(r.Context(), userInfo)
 		if err != nil {
-			ulog.Warn("failed to create token", slog.Any("err", err))
+			ulog.Error("failed to create token", slog.Any("err", err))
 			http.Error(w, "failed to create session", http.StatusInternalServerError)
 			return
 		}
 
 		signedToken, err := tok.Sign(key)
 		if err != nil {
-			ulog.Warn("failed to sign token", slog.Any("err", err))
+			ulog.Error("failed to sign token", slog.Any("err", err))
 			http.Error(w, "failed to create session", http.StatusInternalServerError)
 			return
 		}
