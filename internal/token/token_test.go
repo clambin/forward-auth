@@ -81,7 +81,8 @@ func TestTokenManager_Validate(t *testing.T) {
 		// old refresh token expires
 		time.Sleep(10 * time.Minute)
 		refreshTokenCount, _ = mgr.Len(ctx)
-		assert.Equal(t, 1, refreshTokenCount)
+		// TODO: add this back if we add back expiring the old refresh token
+		//assert.Equal(t, 1, refreshTokenCount)
 
 		// after refresh token expires, Validate() returns an error.
 		time.Sleep(time.Hour + time.Minute)
