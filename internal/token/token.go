@@ -49,8 +49,8 @@ func ParseToken(raw string, key []byte) (*Token, error) {
 	}
 
 	jwtToken, err := jwt.ParseWithClaims(raw, &tokenClaims{}, signFunc,
-		jwt.WithoutClaimsValidation(),
-		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithoutClaimsValidation(),                                // we want to check expiration ourselves
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), // simplifies signFunc
 	)
 	if err != nil {
 		return nil, err
@@ -112,11 +112,11 @@ func (t *TokenManager) Validate(ctx context.Context, token *Token) (*Token, erro
 		return token, nil
 	}
 
-	// the token itself has expired.  if the refresh token is also expired, return an error.
+	// the token itself has expired. if the refresh token is also expired, return an error.
 	currentRefreshTokenDetails, err := t.Get(ctx, token.RefreshToken)
 	if err != nil {
 		if errors.Is(err, cache.ErrNotFound) {
-			return nil, fmt.Errorf("token not found or expired")
+			return nil, fmt.Errorf("refresh token not found or expired")
 		}
 		return nil, fmt.Errorf("refresh token: %w", err)
 	}
@@ -127,8 +127,10 @@ func (t *TokenManager) Validate(ctx context.Context, token *Token) (*Token, erro
 		return nil, fmt.Errorf("refresh token not associated with current user")
 	}
 
-	// TODO: maybe do a singleflight for allocating and the refresh token and only then creating the Token.
 	// Right now, we expire the old token after a couple of seconds to allow for concurrent requests.
+	// This does generate multiple refresh tokens (one for each concurrent request) that only expire
+	// after the session TTL.
+	// Probably needs a distributed lock to prevent multiple refresh tokens from being created.
 
 	newToken, err := t.cycleToken(ctx, token.Identity, currentRefreshTokenDetails.Generation+1)
 	if err != nil {

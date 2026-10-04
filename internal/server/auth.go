@@ -98,6 +98,9 @@ func handleForwardAuth(
 			return
 		}
 
+		// TODO: remove this when done.
+		reqLogger.Debug("parsed token", slog.Any("token", tok))
+
 		// validate the token
 		if tok, err = tokenManager.Validate(r.Context(), tok); err != nil {
 			// token was invalid or expired and not refreshable. Redirect to login

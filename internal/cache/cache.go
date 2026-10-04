@@ -180,8 +180,8 @@ func (c *localCache[T]) List(_ context.Context) (map[string]T, error) {
 }
 
 func (c *localCache[T]) Len(ctx context.Context) (int, error) {
-	entries, _ := c.List(ctx)
-	return len(entries), nil
+	entries, err := c.List(ctx)
+	return len(entries), err
 }
 
 type redisCache[T any] struct {
