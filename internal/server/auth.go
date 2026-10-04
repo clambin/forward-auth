@@ -101,8 +101,8 @@ func handleForwardAuth(
 		}
 
 		// authorize the request
-		if !authorizer.Allow(originalURL, tok.Subject) {
-			logger.Warn("forbidden", "url", originalURL, "subject", tok.Subject)
+		if !authorizer.Allow(originalURL, tok.Identity.Email) {
+			logger.Warn("forbidden", "url", originalURL, "id", tok.Identity)
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
