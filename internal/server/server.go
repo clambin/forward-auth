@@ -54,6 +54,7 @@ func New(
 			handleForwardAuth(
 				cfg.CookieName,
 				[]byte(cfg.Key),
+				cfg.Domain,
 				tokenManager,
 				authenticator,
 				authorizer,

@@ -222,6 +222,7 @@ func TestHandleForwardAuth(t *testing.T) {
 			h := handleForwardAuth(
 				cookieName,
 				[]byte("my-signing-key"),
+				".example.com",
 				&tokenMgr,
 				&fAuthn,
 				&fAuthz,

@@ -57,6 +57,7 @@ func setUserHeaders(w http.ResponseWriter, token *token.Token, groups []string) 
 func handleForwardAuth(
 	cookieName string,
 	key []byte,
+	domain string,
 	tokenManager *token.TokenManager,
 	authenticator Authenticator,
 	authorizer Authorizer,
@@ -109,6 +110,14 @@ func handleForwardAuth(
 			return
 		}
 
+		// sign the token, so we can set it as a cookie
+		signedToken, err := tok.Sign(key)
+		if err != nil {
+			reqLogger.Error("failed to sign token", slog.Any("err", err))
+			http.Error(w, "failed to sign token", http.StatusInternalServerError)
+			return
+		}
+
 		// authorize the request
 		if !authorizer.Allow(originalURL, tok.Identity.Email) {
 			reqLogger.Warn("request forbidden by authorizer", slog.Any("id", tok.Identity))
@@ -118,6 +127,7 @@ func handleForwardAuth(
 
 		// authorize the request
 		setUserHeaders(w, tok, authorizer.GroupsForUser(tok.Identity.Email))
+		setTokenCookie(w, cookieName, signedToken, domain)
 		w.WriteHeader(http.StatusOK)
 	})
 }
@@ -172,17 +182,21 @@ func handleLogin(
 			return
 		}
 
-		http.SetCookie(w, &http.Cookie{
-			Name:   cookieName,
-			Value:  signedToken,
-			Domain: domain,
-			Path:   "/",
-			//Expires:  time.Now().Add(tokenManager.TTL()), // leaving this out so the browser sends an expired cookie
-			Secure:   true,
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-		})
+		setTokenCookie(w, cookieName, signedToken, domain)
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 		ulog.Info("login successful")
+	})
+}
+
+func setTokenCookie(w http.ResponseWriter, cookieName, signedToken, domain string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:   cookieName,
+		Value:  signedToken,
+		Domain: domain,
+		Path:   "/",
+		//Expires:  time.Now().Add(tokenManager.TTL()), // leaving this out so the browser sends an expired cookie
+		Secure:   true,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
 	})
 }
