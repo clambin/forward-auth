@@ -63,13 +63,13 @@ func TestTokenManager_Validate(t *testing.T) {
 		require.NoError(t, err)
 
 		// before access token expires, the token is valid and Validate() doesn't allocate a new token.
-		time.Sleep(10 * time.Minute)
+		time.Sleep(tokenExpirationDuration / 2)
 		token2, err := mgr.Validate(ctx, token)
 		require.NoError(t, err)
 		assert.Equal(t, token, token2)
 
 		// after access token expires, Validate() allocates a new token.
-		time.Sleep(10 * time.Minute)
+		time.Sleep(tokenExpirationDuration)
 		token2, err = mgr.Validate(ctx, token)
 		require.NoError(t, err)
 		assert.NotEqual(t, token, token2)
@@ -79,10 +79,9 @@ func TestTokenManager_Validate(t *testing.T) {
 		assert.Equal(t, 2, refreshTokenCount)
 
 		// old refresh token expires
-		time.Sleep(10 * time.Minute)
+		time.Sleep(2 * refreshTokenSundownDuration)
 		refreshTokenCount, _ = mgr.Len(ctx)
-		// TODO: add this back if we add back expiring the old refresh token
-		//assert.Equal(t, 1, refreshTokenCount)
+		assert.Equal(t, 1, refreshTokenCount)
 
 		// after refresh token expires, Validate() returns an error.
 		time.Sleep(time.Hour + time.Minute)

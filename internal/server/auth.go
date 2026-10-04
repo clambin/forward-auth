@@ -17,37 +17,6 @@ const (
 	forwardedUserGroupsHeader = "X-Forwarded-User-Groups"
 )
 
-// originalRequest restores the original request method and URL from the Traefik forwardAuthrequest headers.
-// This allows us to route forwardAuth requests vs. logout requests (/_oauth/logout) to the correct handler.
-func originalRequest(r *http.Request) (string, *url.URL) {
-	path := cmp.Or(r.Header.Get("X-Forwarded-Uri"), "/")
-	var rawQuery string
-	if n := strings.Index(path, "?"); n > 0 {
-		rawQuery = path[n+1:]
-		path = path[:n]
-	}
-
-	return cmp.Or(r.Header.Get("X-Forwarded-Method"), http.MethodGet), &url.URL{
-		Scheme:   cmp.Or(r.Header.Get("X-Forwarded-Proto"), "https"),
-		Host:     r.Header.Get("X-Forwarded-Host"),
-		Path:     path,
-		RawQuery: rawQuery,
-	}
-}
-
-// setUserHeaders sets the user headers on the response. Blank headers are not set.
-func setUserHeaders(w http.ResponseWriter, token *token.Token, groups []string) {
-	h := w.Header()
-	h.Set(forwardedUserEmailHeader, token.Identity.Email)
-	if token.Identity.Name != "" {
-		h.Set(forwardedUserNameHeader, token.Identity.Name)
-	}
-	if len(groups) > 0 {
-		slices.Sort(groups)
-		w.Header().Set(forwardedUserGroupsHeader, strings.Join(groups, ","))
-	}
-}
-
 // handleForwardAuth is the main handler for the forward-auth middleware.
 // It authenticates the user by extracting the session cookie from the request and validating it against the session store.
 // If the session is missing/invalid, the user is redirected to the OIDC login page.
@@ -101,6 +70,7 @@ func handleForwardAuth(
 
 		// TODO: remove this when done.
 		reqLogger.Debug("parsed token", slog.Any("token", tok))
+		currentRefreshToken := tok.RefreshToken
 
 		// validate the token
 		if tok, err = tokenManager.Validate(r.Context(), tok); err != nil {
@@ -111,7 +81,9 @@ func handleForwardAuth(
 		}
 
 		// TODO: remove this when done.
-		reqLogger.Debug("new token", slog.Any("token", tok))
+		if currentRefreshToken != tok.RefreshToken {
+			reqLogger.Debug("new token", slog.Any("token", tok))
+		}
 
 		// sign the token, so we can set it as a cookie
 		signedToken, err := tok.Sign(key)
@@ -121,14 +93,14 @@ func handleForwardAuth(
 			return
 		}
 
-		// authorize the request
+		// is the request authorized?
 		if !authorizer.Allow(originalURL, tok.Identity.Email) {
 			reqLogger.Warn("request forbidden by authorizer", slog.Any("id", tok.Identity))
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 
-		// authorize the request
+		// the request is authorized. set headers and cookie
 		setUserHeaders(w, tok, authorizer.GroupsForUser(tok.Identity.Email))
 		setTokenCookie(w, cookieName, signedToken, domain)
 		w.WriteHeader(http.StatusOK)
@@ -191,6 +163,7 @@ func handleLogin(
 	})
 }
 
+// setTokenCookie adds a signed token cookie on the response.
 func setTokenCookie(w http.ResponseWriter, cookieName, signedToken, domain string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:   cookieName,
@@ -202,4 +175,35 @@ func setTokenCookie(w http.ResponseWriter, cookieName, signedToken, domain strin
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// originalRequest restores the original request method and URL from the Traefik forwardAuthrequest headers.
+// This allows us to route forwardAuth requests vs. logout requests (/_oauth/logout) to the correct handler.
+func originalRequest(r *http.Request) (string, *url.URL) {
+	path := cmp.Or(r.Header.Get("X-Forwarded-Uri"), "/")
+	var rawQuery string
+	if n := strings.Index(path, "?"); n > 0 {
+		rawQuery = path[n+1:]
+		path = path[:n]
+	}
+
+	return cmp.Or(r.Header.Get("X-Forwarded-Method"), http.MethodGet), &url.URL{
+		Scheme:   cmp.Or(r.Header.Get("X-Forwarded-Proto"), "https"),
+		Host:     r.Header.Get("X-Forwarded-Host"),
+		Path:     path,
+		RawQuery: rawQuery,
+	}
+}
+
+// setUserHeaders sets the user headers on the response. Blank headers are not set.
+func setUserHeaders(w http.ResponseWriter, token *token.Token, groups []string) {
+	h := w.Header()
+	h.Set(forwardedUserEmailHeader, token.Identity.Email)
+	if token.Identity.Name != "" {
+		h.Set(forwardedUserNameHeader, token.Identity.Name)
+	}
+	if len(groups) > 0 {
+		slices.Sort(groups)
+		w.Header().Set(forwardedUserGroupsHeader, strings.Join(groups, ","))
+	}
 }
