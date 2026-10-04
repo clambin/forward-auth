@@ -110,6 +110,9 @@ func handleForwardAuth(
 			return
 		}
 
+		// TODO: remove this when done.
+		reqLogger.Debug("new token", slog.Any("token", tok))
+
 		// sign the token, so we can set it as a cookie
 		signedToken, err := tok.Sign(key)
 		if err != nil {
