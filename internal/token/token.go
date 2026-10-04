@@ -137,13 +137,14 @@ func (t *TokenManager) Validate(ctx context.Context, token *Token) (*Token, erro
 		return nil, fmt.Errorf("token: %w", err)
 	}
 
-	// expire the old refreshToken after a couple of seconds to handle any concurrent requests
-	err = t.Expire(ctx, token.RefreshToken, refreshTokenSundownDuration)
-	if err != nil {
-		return nil, fmt.Errorf("refresh token: %w", err)
-	}
+	/*
+		// expire the old refreshToken after a couple of seconds to handle any concurrent requests
+		err = t.Expire(ctx, token.RefreshToken, refreshTokenSundownDuration)
+		if err != nil {
+			return nil, fmt.Errorf("refresh token: %w", err)
+		}
+	*/
 
-	// create a new token with the same subject and a new refreshToken
 	return newToken, nil
 }
 
