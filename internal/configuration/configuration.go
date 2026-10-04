@@ -62,6 +62,7 @@ type Configuration struct {
 type ServerConfiguration struct {
 	Addr       string `yaml:"addr"`
 	CookieName string `yaml:"cookieName"`
+	Key        string `yaml:"key"`
 	Domain     string `yaml:"domain"`
 }
 

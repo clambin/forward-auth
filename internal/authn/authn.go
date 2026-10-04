@@ -80,6 +80,10 @@ func (m *Authenticator) ConfirmLogin(ctx context.Context, state string, code str
 	return userInfo, u, nil
 }
 
+func (m *Authenticator) Len(ctx context.Context) (int, error) {
+	return m.states.Len(ctx)
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 type states struct {

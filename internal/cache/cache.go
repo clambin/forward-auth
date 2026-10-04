@@ -8,9 +8,9 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
-	"codeberg.org/clambin/go-common/cache"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/redis/go-redis/v9"
 )
@@ -38,6 +38,8 @@ type Cache[T any] interface {
 	// Delete removes an item from the cache. If the item does not exist, no error is returned,
 	// as the item may have expired naturally.
 	Delete(ctx context.Context, id string) error
+	// Expire sets the expiration time of an item in the cache.
+	Expire(ctx context.Context, id string, ttl time.Duration) error
 	// TTL returns the expiration time of the cache.
 	TTL() time.Duration
 	// Len returns the number of items in the cache.
@@ -60,7 +62,8 @@ func New[T any](ttl time.Duration, prefix string, configuration configuration.St
 	switch configuration.Type {
 	case "local", "":
 		c = &localCache[T]{
-			cache: cache.New[string, T](ttl, time.Minute),
+			cache: make(map[string]localCacheEntry[T]),
+			ttl:   ttl,
 		}
 	case "redis":
 		c = &redisCache[T]{
@@ -79,53 +82,106 @@ func New[T any](ttl time.Duration, prefix string, configuration configuration.St
 	return c, nil
 }
 
+func MustNew[T any](ttl time.Duration, prefix string, configuration configuration.StorageConfiguration) Cache[T] {
+	c, err := New[T](ttl, prefix, configuration)
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
+
+// TODO: a localCache never shrinks :(
+
+type localCacheEntry[T any] struct {
+	value T
+	ttl   time.Time
+}
 type localCache[T any] struct {
-	cache *cache.Cache[string, T]
+	cache map[string]localCacheEntry[T]
+	ttl   time.Duration
+	mu    sync.Mutex
 }
 
 func (c *localCache[T]) Set(_ context.Context, id string, val T) error {
-	c.cache.Add(id, val)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cache[id] = localCacheEntry[T]{value: val, ttl: time.Now().Add(c.ttl)}
 	return nil
 }
 
 func (c *localCache[T]) Update(_ context.Context, id string, val T) error {
-	c.cache.Update(id, val)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.cache[id]
+	if !ok {
+		return ErrNotFound
+	}
+	entry.value = val
+	c.cache[id] = entry
 	return nil
 }
 
 func (c *localCache[T]) Get(_ context.Context, id string) (T, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	var err error
-	value, ok := c.cache.Get(id)
-	if !ok {
+	entry, ok := c.cache[id]
+	if !ok || time.Now().After(entry.ttl) {
 		err = ErrNotFound
 	}
-	return value, err
+	return entry.value, err
 }
 
 func (c *localCache[T]) GetAndDelete(_ context.Context, id string) (T, error) {
-	var err error
-	value, ok := c.cache.GetAndRemove(id)
-	if !ok {
-		err = ErrNotFound
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.cache[id]
+	if !ok || time.Now().After(entry.ttl) {
+		return entry.value, ErrNotFound
 	}
-	return value, err
+	delete(c.cache, id)
+	return entry.value, nil
 }
 
 func (c *localCache[T]) Delete(_ context.Context, id string) error {
-	c.cache.Remove(id)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.cache, id)
+	return nil
+}
+
+func (c *localCache[T]) Expire(_ context.Context, id string, ttl time.Duration) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.cache[id]
+	if !ok || time.Now().After(entry.ttl) {
+		return ErrNotFound
+	}
+	entry.ttl = time.Now().Add(ttl)
+	c.cache[id] = entry
 	return nil
 }
 
 func (c *localCache[T]) TTL() time.Duration {
-	return c.cache.GetDefaultExpiration()
+	return c.ttl
 }
 
 func (c *localCache[T]) List(_ context.Context) (map[string]T, error) {
-	return maps.Collect(c.cache.Iterate()), nil
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	result := make(map[string]T, len(c.cache))
+	for id, entry := range c.cache {
+		if time.Now().After(entry.ttl) {
+			continue
+		}
+		result[id] = entry.value
+	}
+	return result, nil
 }
 
-func (c *localCache[T]) Len(_ context.Context) (int, error) {
-	return c.cache.Len(), nil
+func (c *localCache[T]) Len(ctx context.Context) (int, error) {
+	entries, _ := c.List(ctx)
+	return len(entries), nil
 }
 
 type redisCache[T any] struct {
@@ -182,6 +238,10 @@ func (c *redisCache[T]) Delete(ctx context.Context, id string) error {
 		err = nil
 	}
 	return err
+}
+
+func (c *redisCache[T]) Expire(ctx context.Context, id string, ttl time.Duration) error {
+	return c.client.Expire(ctx, c.prefixedID(id), ttl).Err()
 }
 
 func (c *redisCache[T]) TTL() time.Duration {
