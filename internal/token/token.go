@@ -17,7 +17,7 @@ import (
 const (
 	tokenIssuer                 = "forward-auth"
 	tokenExpirationDuration     = 15 * time.Minute
-	refreshTokenSundownDuration = 10 * time.Second
+	refreshTokenSundownDuration = 15 * time.Minute
 )
 
 type tokenClaims struct {
