@@ -53,7 +53,7 @@ func setUserHeaders(w http.ResponseWriter, token *token.Token, groups []string) 
 // If the session is missing/invalid, the user is redirected to the OIDC login page.
 // If the session is valid, the user is authorized and the request is forwarded to the original destination.
 //
-// TODO: review
+// TODO: review doc vs implementation
 func handleForwardAuth(
 	cookieName string,
 	key []byte,
@@ -69,7 +69,7 @@ func handleForwardAuth(
 		// request logger
 		reqLogger := logger.With(slog.Group("request",
 			slog.String("method", originalMethod),
-			slog.String("url", originalURL.Scheme),
+			slog.String("url", originalURL.String()),
 		))
 
 		// redirect to login page
