@@ -146,36 +146,30 @@ func (t *TokenManager) Validate(ctx context.Context, token *Token) (*Token, erro
 		return nil, fmt.Errorf("refresh token: %w", err)
 	}
 
+	// TODO: if the secret has been rotated, we can roll up to the last valid refresh token
+	// and return a token based on that refresh Token.
+
 	// check that the refreshToken is associated with the current user
 	// TODO: this should always be the case
 	if currentRefreshTokenDetails.Email != token.Identity.Email {
 		return nil, fmt.Errorf("refresh token not associated with current user")
 	}
 
-	// Right now, we expire the old token after a couple of seconds to allow for concurrent requests.
-	// This does generate multiple refresh tokens (one for each concurrent request) that only expire
-	// after the session TTL.
-	// Probably needs a distributed lock to prevent multiple refresh tokens from being created.
-
-	newToken, err := t.rotate(ctx, token.Identity, currentRefreshTokenDetails.Generation+1)
-	if err != nil {
-		return nil, fmt.Errorf("token: %w", err)
+	// generate a new refresh token and return a token based on that refresh token.
+	refreshTokenID := generateRefreshToken()
+	if err := t.Rotate(ctx, token.RefreshToken, refreshTokenID); err != nil {
+		return nil, fmt.Errorf("rotate: %w", err)
 	}
-
-	return newToken, nil
+	return NewToken(token.Identity, tokenExpirationDuration, refreshTokenID), nil
 }
 
 // Token returns a new token with a new refresh token for the given identity.
 func (t *TokenManager) Token(ctx context.Context, id provider.Identity) (*Token, error) {
-	return t.rotate(ctx, id, 1)
-}
-
-func (t *TokenManager) rotate(ctx context.Context, id provider.Identity, generation int) (*Token, error) {
 	refreshTokenID := generateRefreshToken()
 	err := t.Set(ctx, refreshTokenID, RefreshTokenDetails{
 		Identity:   id,
 		IssuedAt:   time.Now(),
-		Generation: generation,
+		Generation: 1,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("refresh token: %w", err)

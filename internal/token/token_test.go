@@ -86,7 +86,7 @@ func TestTokenManager_Validate(t *testing.T) {
 
 func TestTokenStore(t *testing.T) {
 	ctx := t.Context()
-	c, err := tcredis.Run(ctx, "redis:latest")
+	c, err := tcredis.Run(ctx, "valkey/valkey:latest")
 	require.NoError(t, err)
 	endpoint, err := c.Endpoint(ctx, "")
 	require.NoError(t, err)
