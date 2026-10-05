@@ -83,9 +83,7 @@ func forwardAuthRequest(s string) *http.Request {
 */
 func BenchmarkForwardAuthHandler(b *testing.B) {
 	// Current:
-	// BenchmarkForwardAuthHandler-10    	   10123	    118111 ns/op	  333603 B/op	    2300 allocs/op
-	// Refresh:
-	// BenchmarkForwardAuthHandler-10    	  412226	      2886 ns/op	    4681 B/op	      50 allocs/op
+	// BenchmarkForwardAuthHandler-10    	  331473	      3616 ns/op	    5571 B/op	      61 allocs/op
 	const cookieName = "test"
 	var fAuthn fakeAuthenticator
 	fAuthz := fakeAuthorizer{allow: true}

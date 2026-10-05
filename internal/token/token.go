@@ -285,11 +285,40 @@ func (r *redisTokenStore) Rotate(ctx context.Context, currentRefreshToken, rotat
 }
 
 func (r *redisTokenStore) Count(ctx context.Context) (int, error) {
+	var activeRefreshTokens int
 	keys, _, err := r.client.Scan(ctx, 0, r.key("*"), 0).Result()
 	if err != nil {
 		return 0, fmt.Errorf("redis: %w", err)
 	}
-	return len(keys), nil
+	cmds := make([]*redis.StringCmd, len(keys))
+	pipe := r.client.Pipeline()
+	for i, key := range keys {
+		cmds[i] = pipe.Get(ctx, key)
+	}
+
+	_, err = pipe.Exec(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("redis: %w", err)
+	}
+
+	for _, cmd := range cmds {
+		result, err := cmd.Result()
+		if err != nil {
+			if errors.Is(err, redis.Nil) {
+				// key expired between Scan & Get
+				continue
+			}
+			return 0, fmt.Errorf("redis: %w", err)
+		}
+		var details RefreshTokenDetails
+		if err = json.Unmarshal([]byte(result), &details); err == nil {
+			if details.RotatedTo == "" {
+				activeRefreshTokens++
+			}
+		}
+	}
+
+	return activeRefreshTokens, nil
 }
 
 func (r *redisTokenStore) key(refreshToken string) string {
@@ -351,14 +380,19 @@ func (i *inMemoryTokenStore) Rotate(_ context.Context, oldRefreshToken string, n
 }
 
 func (i *inMemoryTokenStore) Count(_ context.Context) (int, error) {
+	var activeRefreshTokens int
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	for k, v := range i.items {
 		if v.ttl.Before(time.Now()) {
 			delete(i.items, k)
+			continue
+		}
+		if v.details.RotatedTo == "" {
+			activeRefreshTokens++
 		}
 	}
-	return len(i.items), nil
+	return activeRefreshTokens, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

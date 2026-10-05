@@ -130,10 +130,10 @@ func TestTokenStore(t *testing.T) {
 			assert.Equal(t, 2, token.Generation)
 			assert.Empty(t, token.RotatedTo)
 
-			// there should be 2 tokens now
+			// there should only be 1 active token
 			count, err := s.Count(ctx)
 			require.NoError(t, err)
-			assert.Equal(t, 2, count)
+			assert.Equal(t, 1, count)
 
 			// a rotated refresh token cannot be rotated again
 			err = s.Rotate(ctx, "foo", "bar")
