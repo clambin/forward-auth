@@ -245,16 +245,14 @@ if details.rotatedTo ~= nil and details.rotatedTo ~= "" then
     return { "already rotated" }
 end
 
-local rotatedDetails = details
-
 -- mark the old key as rotated
 details.rotatedTo = ARGV[1]
 redis.call("SET", KEYS[1], cjson.encode(details), "PX", ttl)
 
-
 -- add the new key
-rotatedDetails.generation = rotatedDetails.generation + 1
-redis.call("SET", KEYS[2], cjson.encode(rotatedDetails), "PX", ttl)
+details.rotatedTo = ""
+details.generation = details.generation + 1
+redis.call("SET", KEYS[2], cjson.encode(details), "PX", ttl)
 
 return { "created" }
 `)

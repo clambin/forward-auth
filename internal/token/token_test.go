@@ -128,6 +128,7 @@ func TestTokenStore(t *testing.T) {
 			token, err = s.Get(ctx, "bar")
 			require.NoError(t, err)
 			assert.Equal(t, 2, token.Generation)
+			assert.Empty(t, token.RotatedTo)
 
 			// there should be 2 tokens now
 			count, err := s.Count(ctx)
