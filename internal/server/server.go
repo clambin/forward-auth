@@ -40,7 +40,7 @@ type RedisClient interface {
 // New returns a new http.Handler that serves all API endpoints and the web frontend.
 func New(
 	cfg configuration.ServerConfiguration,
-	tokenManager *token.TokenManager,
+	tokenManager *token.Manager,
 	authenticator Authenticator,
 	authorizer Authorizer,
 	redisClient RedisClient,

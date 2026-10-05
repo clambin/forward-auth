@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"uuid"
 
 	"github.com/clambin/forward-auth/internal/token"
 )
@@ -27,7 +28,7 @@ func handleForwardAuth(
 	cookieName string,
 	key []byte,
 	domain string,
-	tokenManager *token.TokenManager,
+	tokenManager *token.Manager,
 	authenticator Authenticator,
 	authorizer Authorizer,
 	logger *slog.Logger,
@@ -37,10 +38,13 @@ func handleForwardAuth(
 		originalMethod, originalURL := originalRequest(r)
 
 		// request logger
-		reqLogger := logger.With(slog.Group("request",
-			slog.String("method", originalMethod),
-			slog.String("url", originalURL.String()),
-		))
+		reqLogger := logger.With(
+			slog.String("reqID", uuid.New().String()),
+			slog.Group("request",
+				slog.String("method", originalMethod),
+				slog.String("url", originalURL.String()),
+			),
+		)
 
 		// redirect to login page
 		// TODO: this ignores the original method. Should we limit this to GET requests?
@@ -119,7 +123,7 @@ func handleLogin(
 	cookieName string,
 	key []byte,
 	domain string,
-	tokenManager *token.TokenManager,
+	tokenManager *token.Manager,
 	authenticator Authenticator,
 	logger *slog.Logger,
 ) http.Handler {

@@ -1,6 +1,7 @@
 package token
 
 import (
+	"log/slog"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -53,7 +54,7 @@ func TestParseToken(t *testing.T) {
 func TestTokenManager_Validate(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := t.Context()
-		mgr, err := NewTokenManager(time.Hour, configuration.StorageConfiguration{})
+		mgr, err := NewTokenManager(time.Hour, configuration.StorageConfiguration{}, slog.New(slog.DiscardHandler))
 		require.NoError(t, err)
 
 		// create a new token
@@ -154,29 +155,41 @@ func TestTokenManager_Validate_Rollup(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = c.Terminate(ctx) })
 
-	tokenMgr, err := NewTokenManager(time.Hour, configuration.StorageConfiguration{Type: "redis", Redis: configuration.StorageRedisConfiguration{Addr: endpoint}})
-	require.NoError(t, err)
-
-	id := provider.Identity{Email: "test@example.com"}
-	orig, err := tokenMgr.Token(ctx, id)
-	require.NoError(t, err)
-
-	refreshToken := orig.RefreshToken
-	// create a chain of refresh Tokens
-	for range 5 {
-		rotatedRefreshToken := generateRefreshToken()
-		require.NoError(t, tokenMgr.Rotate(ctx, refreshToken, rotatedRefreshToken))
-		refreshToken = rotatedRefreshToken
+	tests := []struct {
+		name string
+		cfg  configuration.StorageConfiguration
+	}{
+		{"redis", configuration.StorageConfiguration{Type: "redis", Redis: configuration.StorageRedisConfiguration{Addr: endpoint}}},
+		{"memory", configuration.StorageConfiguration{}},
 	}
 
-	// find the latest refresh token
-	final, err := tokenMgr.latestRefreshToken(ctx, orig.RefreshToken)
-	require.NoError(t, err)
-	assert.Equal(t, refreshToken, final)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tokenMgr, err := NewTokenManager(time.Hour, tt.cfg, slog.New(slog.DiscardHandler))
+			require.NoError(t, err)
 
-	// ensure it exists and has no rotated token
-	token, err := tokenMgr.Get(ctx, final)
-	require.NoError(t, err)
-	assert.Empty(t, token.RotatedTo, final)
+			id := provider.Identity{Email: "test@example.com"}
+			orig, err := tokenMgr.Token(ctx, id)
+			require.NoError(t, err)
 
+			refreshToken := orig.RefreshToken
+			// create a chain of refresh Tokens
+			for range 5 {
+				rotatedRefreshToken := generateRefreshToken()
+				require.NoError(t, tokenMgr.Rotate(ctx, refreshToken, rotatedRefreshToken))
+				refreshToken = rotatedRefreshToken
+			}
+
+			// find the latest refresh token
+			final, err := tokenMgr.latestRefreshToken(ctx, orig.RefreshToken)
+			require.NoError(t, err)
+			assert.Equal(t, refreshToken, final)
+
+			// ensure it exists and has no rotated token
+			token, err := tokenMgr.Get(ctx, final)
+			require.NoError(t, err)
+			assert.Empty(t, token.RotatedTo, final)
+
+		})
+	}
 }

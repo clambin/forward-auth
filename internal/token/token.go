@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -92,8 +93,9 @@ func (t Token) mustSign(key []byte) string {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-type TokenManager struct {
+type Manager struct {
 	tokenStore
+	logger *slog.Logger
 }
 
 type RefreshTokenDetails struct {
@@ -103,7 +105,7 @@ type RefreshTokenDetails struct {
 	Generation        int    `json:"generation"`
 }
 
-func NewTokenManager(ttl time.Duration, cfg configuration.StorageConfiguration) (*TokenManager, error) {
+func NewTokenManager(ttl time.Duration, cfg configuration.StorageConfiguration, logger *slog.Logger) (*Manager, error) {
 	var store tokenStore
 	switch cfg.Type {
 	case "memory", "":
@@ -125,40 +127,47 @@ func NewTokenManager(ttl time.Duration, cfg configuration.StorageConfiguration) 
 		return nil, fmt.Errorf("invalid token manager configuration: unsupported storage type %s", cfg.Type)
 	}
 
-	return &TokenManager{tokenStore: store}, nil
+	return &Manager{tokenStore: store, logger: logger}, nil
 }
 
 // Validate verifies that the received token is still valid.
 // If the token is valid, it returns the token and no error.
 // If the token is expired, but the refreshToken is still valid, it returns a new token, with a new refresh token.
-func (t *TokenManager) Validate(ctx context.Context, token *Token) (*Token, error) {
+func (m *Manager) Validate(ctx context.Context, token *Token) (*Token, error) {
 	// if the token is valid, return the current token.
 	if !token.Expired() {
 		return token, nil
 	}
 
 	// the token itself has expired. is there a valid refresh token?
+	m.logger.Debug("token expired, checking refresh token", "refreshToken", token.RefreshToken)
 
 	// the presented refresh token may have already been rotated.
 	// follow the 'rotatedTo' chain until we find the current refresh token.
 	// if any refresh token in the chain has already expired, t.latestRefreshToken() will return an error.
-	refreshToken, err := t.latestRefreshToken(ctx, token.RefreshToken)
+	refreshToken, err := m.latestRefreshToken(ctx, token.RefreshToken)
 	if err != nil {
 		return nil, fmt.Errorf("latest refresh token: %w", err)
 	}
 
+	m.logger.Debug("latest refresh token found", "refreshToken", refreshToken)
+
 	// generate a new refresh token and return a token based on that refresh token.
+
 	rotatedRefreshToken := generateRefreshToken()
-	if err := t.Rotate(ctx, refreshToken, rotatedRefreshToken); err != nil {
+	m.logger.Debug("attempting to rotate refresh token", "from", refreshToken, "to", rotatedRefreshToken)
+
+	if err := m.Rotate(ctx, refreshToken, rotatedRefreshToken); err != nil {
+		m.logger.Error("failed to rotate refresh token", "err", err)
 		return nil, fmt.Errorf("rotate: %w", err)
 	}
 	return NewToken(token.Identity, tokenExpirationDuration, rotatedRefreshToken), nil
 }
 
 // Token returns a new token with a new refresh token for the given identity.
-func (t *TokenManager) Token(ctx context.Context, id provider.Identity) (*Token, error) {
+func (m *Manager) Token(ctx context.Context, id provider.Identity) (*Token, error) {
 	refreshTokenID := generateRefreshToken()
-	err := t.Set(ctx, refreshTokenID, RefreshTokenDetails{
+	err := m.Set(ctx, refreshTokenID, RefreshTokenDetails{
 		Identity:   id,
 		IssuedAt:   time.Now(),
 		Generation: 1,
@@ -171,9 +180,9 @@ func (t *TokenManager) Token(ctx context.Context, id provider.Identity) (*Token,
 
 // latestRefreshToken starts with a refresh token and, if rotated, follows the chain of refresh tokens
 // until it finds the current (non-rotated) refresh token.
-func (t *TokenManager) latestRefreshToken(ctx context.Context, refreshToken string) (string, error) {
+func (m *Manager) latestRefreshToken(ctx context.Context, refreshToken string) (string, error) {
 	for {
-		details, err := t.Get(ctx, refreshToken)
+		details, err := m.Get(ctx, refreshToken)
 		if err != nil {
 			return "", err
 		}
@@ -407,7 +416,7 @@ func (i *inMemoryTokenStore) Count(_ context.Context) (int, error) {
 var _ prometheus.Collector = (*InstrumentedTokenManager)(nil)
 
 type InstrumentedTokenManager struct {
-	TokenManager *TokenManager
+	TokenManager *Manager
 	Desc         *prometheus.Desc
 }
 
