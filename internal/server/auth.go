@@ -81,14 +81,7 @@ func handleForwardAuth(
 			return
 		}
 
-		// is the request authorized?
-		if !authorizer.Allow(originalURL, tok.Identity.Email) {
-			reqLogger.Warn("request forbidden by authorizer", slog.Any("id", tok.Identity))
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
-
-		// if the token has changed, sign the new token, so we can set it as a cookie
+		// if the token has changed, update it in the response's cookie and redirect so the browser tries again.
 		if tok.RefreshToken != currentRefreshToken {
 			// TODO: remove this when done.
 			reqLogger.Debug("new token", slog.Any("token", tok))
@@ -99,11 +92,20 @@ func handleForwardAuth(
 				http.Error(w, "failed to sign token", http.StatusInternalServerError)
 				return
 			}
+			setTokenCookie(w, cookieName, signedToken, domain)
+			http.Redirect(w, r, originalURL.String(), http.StatusSeeOther)
+			return
 		}
 
-		// the request is authorized. set headers and cookie
+		// is the request authorized?
+		if !authorizer.Allow(originalURL, tok.Identity.Email) {
+			reqLogger.Warn("request forbidden by authorizer", slog.Any("id", tok.Identity))
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
+		// the request is authorized
 		setUserHeaders(w, tok, authorizer.GroupsForUser(tok.Identity.Email))
-		setTokenCookie(w, cookieName, signedToken, domain)
 		w.WriteHeader(http.StatusOK)
 	})
 }
