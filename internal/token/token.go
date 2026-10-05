@@ -97,10 +97,10 @@ type TokenManager struct {
 }
 
 type RefreshTokenDetails struct {
-	provider.Identity `json:"identity"`
 	IssuedAt          time.Time `json:"issuedAt"`
-	Generation        int       `json:"generation"`
-	RotatedTo         string    `json:"rotatedTo"`
+	provider.Identity `json:"identity"`
+	RotatedTo         string `json:"rotatedTo"`
+	Generation        int    `json:"generation"`
 }
 
 func NewTokenManager(ttl time.Duration, cfg configuration.StorageConfiguration) (*TokenManager, error) {
@@ -108,7 +108,7 @@ func NewTokenManager(ttl time.Duration, cfg configuration.StorageConfiguration) 
 	switch cfg.Type {
 	case "memory", "":
 		store = &inMemoryTokenStore{
-			items: make(map[string]inMemoryTokenStoreItems),
+			items: make(map[string]inMemoryTokenStoreItem),
 			ttl:   ttl,
 		}
 	case "redis":
@@ -304,13 +304,13 @@ func (r *redisTokenStore) key(refreshToken string) string {
 	return refreshTokenPrefix + refreshToken
 }
 
-type inMemoryTokenStoreItems struct {
-	details    RefreshTokenDetails
-	expiration time.Time
+type inMemoryTokenStoreItem struct {
+	ttl     time.Time
+	details RefreshTokenDetails
 }
 
 type inMemoryTokenStore struct {
-	items map[string]inMemoryTokenStoreItems
+	items map[string]inMemoryTokenStoreItem
 	ttl   time.Duration
 	mu    sync.Mutex
 }
@@ -322,7 +322,7 @@ func (i *inMemoryTokenStore) Get(_ context.Context, refreshToken string) (Refres
 	if !ok {
 		return RefreshTokenDetails{}, ErrRefreshTokenNotFound
 	}
-	if item.expiration.Before(time.Now()) {
+	if item.ttl.Before(time.Now()) {
 		delete(i.items, refreshToken)
 		return RefreshTokenDetails{}, ErrRefreshTokenNotFound
 	}
@@ -332,9 +332,9 @@ func (i *inMemoryTokenStore) Get(_ context.Context, refreshToken string) (Refres
 func (i *inMemoryTokenStore) Set(_ context.Context, refreshToken string, details RefreshTokenDetails) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	i.items[refreshToken] = inMemoryTokenStoreItems{
-		details:    details,
-		expiration: time.Now().Add(i.ttl),
+	i.items[refreshToken] = inMemoryTokenStoreItem{
+		details: details,
+		ttl:     time.Now().Add(i.ttl),
 	}
 	return nil
 }
@@ -362,7 +362,7 @@ func (i *inMemoryTokenStore) Count(_ context.Context) (int, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	for k, v := range i.items {
-		if v.expiration.Before(time.Now()) {
+		if v.ttl.Before(time.Now()) {
 			delete(i.items, k)
 		}
 	}

@@ -106,7 +106,7 @@ func TestTokenStore(t *testing.T) {
 		{
 			name: "memory",
 			tokenStore: &inMemoryTokenStore{
-				items: make(map[string]inMemoryTokenStoreItems),
+				items: make(map[string]inMemoryTokenStoreItem),
 				ttl:   5 * time.Minute,
 			},
 		},
