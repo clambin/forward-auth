@@ -230,8 +230,7 @@ func (r *redisTokenStore) Set(ctx context.Context, s string, details RefreshToke
 	return nil
 }
 
-func (r *redisTokenStore) Rotate(ctx context.Context, currentRefreshToken, rotatedRefreshToken string) error {
-	var rotateScript = redis.NewScript(`
+var rotateScript = redis.NewScript(`
 local old = redis.call("GET", KEYS[1])
 local ttl = redis.call("PTTL", KEYS[1])
 
@@ -257,6 +256,7 @@ redis.call("SET", KEYS[2], cjson.encode(details), "PX", ttl)
 return { "created" }
 `)
 
+func (r *redisTokenStore) Rotate(ctx context.Context, currentRefreshToken, rotatedRefreshToken string) error {
 	result, err := rotateScript.Run(ctx, r.client, []string{r.key(currentRefreshToken), r.key(rotatedRefreshToken)}, rotatedRefreshToken).Result()
 	if err != nil {
 		return fmt.Errorf("refresh token: %w", err)
