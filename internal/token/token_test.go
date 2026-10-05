@@ -8,8 +8,10 @@ import (
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 )
 
 func TestParseToken(t *testing.T) {
@@ -74,19 +76,71 @@ func TestTokenManager_Validate(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEqual(t, token, token2)
 
-		// both old and new refresh tokens exist in the Cache.
-		refreshTokenCount, _ := mgr.Len(ctx)
-		assert.Equal(t, 2, refreshTokenCount)
-
-		// old refresh token expires
-		time.Sleep(2 * refreshTokenSundownDuration)
-		refreshTokenCount, _ = mgr.Len(ctx)
-		assert.Equal(t, 1, refreshTokenCount)
-
 		// after refresh token expires, Validate() returns an error.
 		time.Sleep(time.Hour + time.Minute)
 		token2, err = mgr.Validate(ctx, token2)
 		require.Error(t, err)
 		assert.Nil(t, token2)
 	})
+}
+
+func TestTokenStore(t *testing.T) {
+	ctx := t.Context()
+	c, err := tcredis.Run(ctx, "redis:latest")
+	require.NoError(t, err)
+	endpoint, err := c.Endpoint(ctx, "")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Terminate(ctx) })
+
+	tests := []struct {
+		name       string
+		tokenStore tokenStore
+	}{
+		{
+			name: "redis",
+			tokenStore: &redisTokenStore{
+				client: redis.NewClient(&redis.Options{Addr: endpoint}),
+				ttl:    5 * time.Minute,
+			},
+		},
+		{
+			name: "memory",
+			tokenStore: &inMemoryTokenStore{
+				items: make(map[string]inMemoryTokenStoreItems),
+				ttl:   5 * time.Minute,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := tt.tokenStore
+			// create a refresh token and rotate it
+			require.NoError(t, s.Set(ctx, "foo", RefreshTokenDetails{Generation: 1}))
+			require.NoError(t, s.Rotate(ctx, "foo", "bar"))
+
+			// verify the old refresh token is marked as rotated
+			token, err := s.Get(ctx, "foo")
+			require.NoError(t, err)
+			assert.Equal(t, "bar", token.RotatedTo)
+
+			// verify the new refresh token is created
+			token, err = s.Get(ctx, "bar")
+			require.NoError(t, err)
+			assert.Equal(t, 2, token.Generation)
+
+			// there should be 2 tokens now
+			count, err := s.Count(ctx)
+			require.NoError(t, err)
+			assert.Equal(t, 2, count)
+
+			// a rotated refresh token cannot be rotated again
+			err = s.Rotate(ctx, "foo", "bar")
+			require.ErrorIs(t, err, ErrRefreshTokenAlreadyRotated)
+
+			// a non-existent refresh token cannot be rotated
+			err = s.Rotate(ctx, "snafu", "bar")
+			require.ErrorIs(t, err, ErrRefreshTokenNotFound)
+		})
+	}
 }

@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
-	"github.com/clambin/forward-auth/internal/cache"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/token"
 	"github.com/redis/go-redis/v9"
@@ -90,12 +89,10 @@ func BenchmarkForwardAuthHandler(b *testing.B) {
 	const cookieName = "test"
 	var fAuthn fakeAuthenticator
 	fAuthz := fakeAuthorizer{allow: true}
-	mgr := token.TokenManager{
-		Cache: cache.MustNew[token.RefreshTokenDetails](time.Hour, "", configuration.StorageConfiguration{}),
-	}
+	mgr, _ := token.NewTokenManager(time.Hour, configuration.StorageConfiguration{})
 	s := New(
 		configuration.ServerConfiguration{CookieName: cookieName, Key: "secret", Domain: ".example.com"},
-		&mgr,
+		mgr,
 		&fAuthn,
 		&fAuthz,
 		&fakeRedisClient{},
@@ -215,15 +212,13 @@ func TestHandleForwardAuth(t *testing.T) {
 			const cookieName = "test"
 			var fAuthn fakeAuthenticator
 			fAuthz := fakeAuthorizer{allow: tt.allow}
-			tokenMgr := token.TokenManager{
-				Cache: cache.MustNew[token.RefreshTokenDetails](time.Hour, "", configuration.StorageConfiguration{}),
-			}
+			mgr, _ := token.NewTokenManager(time.Hour, configuration.StorageConfiguration{})
 
 			h := handleForwardAuth(
 				cookieName,
 				[]byte("my-signing-key"),
 				".example.com",
-				&tokenMgr,
+				mgr,
 				&fAuthn,
 				&fAuthz,
 				slog.New(slog.DiscardHandler),
@@ -231,7 +226,7 @@ func TestHandleForwardAuth(t *testing.T) {
 
 			req := forwardAuthRequest("/")
 			if tt.withToken {
-				tok, err := tokenMgr.Token(t.Context(), provider.Identity{Email: "foo@example.com"})
+				tok, err := mgr.Token(t.Context(), provider.Identity{Email: "foo@example.com"})
 				require.NoError(t, err)
 				rawToken, err := tok.Sign([]byte("my-signing-key"))
 				require.NoError(t, err)
@@ -283,13 +278,12 @@ func TestHandleLogin(t *testing.T) {
 				codes:  map[string]struct{}{"1234": {}},
 			}
 			const cookieName = "test"
+			mgr, _ := token.NewTokenManager(time.Hour, configuration.StorageConfiguration{})
 			h := handleLogin(
 				cookieName,
 				[]byte("secret"),
 				".example.com",
-				&token.TokenManager{
-					Cache: cache.MustNew[token.RefreshTokenDetails](time.Hour, "", configuration.StorageConfiguration{}),
-				},
+				mgr,
 				&fa,
 				slog.New(slog.DiscardHandler),
 			)

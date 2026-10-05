@@ -61,7 +61,8 @@ func handleForwardAuth(
 			redirectToLogin(originalURL)
 			return
 		}
-		tok, err := token.ParseToken(cookie.Value, key)
+		signedToken := cookie.Value
+		tok, err := token.ParseToken(signedToken, key)
 		if err != nil {
 			reqLogger.Error("failed to parse cookie", slog.Any("err", err))
 			redirectToLogin(originalURL)
@@ -80,24 +81,24 @@ func handleForwardAuth(
 			return
 		}
 
-		// TODO: remove this when done.
-		if currentRefreshToken != tok.RefreshToken {
-			reqLogger.Debug("new token", slog.Any("token", tok))
-		}
-
-		// sign the token, so we can set it as a cookie
-		signedToken, err := tok.Sign(key)
-		if err != nil {
-			reqLogger.Error("failed to sign token", slog.Any("err", err))
-			http.Error(w, "failed to sign token", http.StatusInternalServerError)
-			return
-		}
-
 		// is the request authorized?
 		if !authorizer.Allow(originalURL, tok.Identity.Email) {
 			reqLogger.Warn("request forbidden by authorizer", slog.Any("id", tok.Identity))
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
+		}
+
+		// if the token has changed, sign the new token, so we can set it as a cookie
+		if tok.RefreshToken != currentRefreshToken {
+			// TODO: remove this when done.
+			reqLogger.Debug("new token", slog.Any("token", tok))
+
+			signedToken, err = tok.Sign(key)
+			if err != nil {
+				reqLogger.Error("failed to sign token", slog.Any("err", err))
+				http.Error(w, "failed to sign token", http.StatusInternalServerError)
+				return
+			}
 		}
 
 		// the request is authorized. set headers and cookie

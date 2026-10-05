@@ -69,8 +69,8 @@ func main() {
 	metrics := middleware.GetMetrics()
 	prometheus.MustRegister(
 		metrics,
-		cache.InstrumentedCache[cache.Cache[token.RefreshTokenDetails]]{
-			Cache: tokenMgr.Cache,
+		&token.InstrumentedTokenManager{
+			TokenManager: tokenMgr,
 			Desc: prometheus.NewDesc(
 				"forward_auth_session_count",
 				"Number of active sessions",
