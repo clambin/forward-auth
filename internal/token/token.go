@@ -137,30 +137,22 @@ func (t *TokenManager) Validate(ctx context.Context, token *Token) (*Token, erro
 		return token, nil
 	}
 
-	// the token itself has expired. if the refresh token is also expired, return an error.
-	currentRefreshTokenDetails, err := t.Get(ctx, token.RefreshToken)
+	// the token itself has expired. is there a valid refresh token?
+
+	// the presented refresh token may have already been rotated.
+	// follow the 'rotatedTo' chain until we find the current refresh token.
+	// if any refresh token in the chain has already expired, t.latestRefreshToken() will return an error.
+	refreshToken, err := t.latestRefreshToken(ctx, token.RefreshToken)
 	if err != nil {
-		if errors.Is(err, ErrRefreshTokenNotFound) {
-			return nil, fmt.Errorf("refresh token not found or expired")
-		}
-		return nil, fmt.Errorf("refresh token: %w", err)
-	}
-
-	// TODO: if the secret has been rotated, we can roll up to the last valid refresh token
-	// and return a token based on that refresh Token.
-
-	// check that the refreshToken is associated with the current user
-	// TODO: this should always be the case
-	if currentRefreshTokenDetails.Email != token.Identity.Email {
-		return nil, fmt.Errorf("refresh token not associated with current user")
+		return nil, fmt.Errorf("latest refresh token: %w", err)
 	}
 
 	// generate a new refresh token and return a token based on that refresh token.
-	refreshTokenID := generateRefreshToken()
-	if err := t.Rotate(ctx, token.RefreshToken, refreshTokenID); err != nil {
+	rotatedRefreshToken := generateRefreshToken()
+	if err := t.Rotate(ctx, refreshToken, rotatedRefreshToken); err != nil {
 		return nil, fmt.Errorf("rotate: %w", err)
 	}
-	return NewToken(token.Identity, tokenExpirationDuration, refreshTokenID), nil
+	return NewToken(token.Identity, tokenExpirationDuration, rotatedRefreshToken), nil
 }
 
 // Token returns a new token with a new refresh token for the given identity.
@@ -175,6 +167,21 @@ func (t *TokenManager) Token(ctx context.Context, id provider.Identity) (*Token,
 		return nil, fmt.Errorf("refresh token: %w", err)
 	}
 	return NewToken(id, tokenExpirationDuration, refreshTokenID), nil
+}
+
+// latestRefreshToken starts with a refresh token and, if rotated, follows the chain of refresh tokens
+// until it finds the current (non-rotated) refresh token.
+func (t *TokenManager) latestRefreshToken(ctx context.Context, refreshToken string) (string, error) {
+	for {
+		details, err := t.Get(ctx, refreshToken)
+		if err != nil {
+			return "", err
+		}
+		if details.RotatedTo == "" {
+			return refreshToken, nil
+		}
+		refreshToken = details.RotatedTo
+	}
 }
 
 func generateRefreshToken() string {

@@ -145,3 +145,38 @@ func TestTokenStore(t *testing.T) {
 		})
 	}
 }
+
+func TestTokenManager_Validate_Rollup(t *testing.T) {
+	ctx := t.Context()
+	c, err := tcredis.Run(ctx, "valkey/valkey:latest")
+	require.NoError(t, err)
+	endpoint, err := c.Endpoint(ctx, "")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Terminate(ctx) })
+
+	tokenMgr, err := NewTokenManager(time.Hour, configuration.StorageConfiguration{Type: "redis", Redis: configuration.StorageRedisConfiguration{Addr: endpoint}})
+	require.NoError(t, err)
+
+	id := provider.Identity{Email: "test@example.com"}
+	orig, err := tokenMgr.Token(ctx, id)
+	require.NoError(t, err)
+
+	refreshToken := orig.RefreshToken
+	// create a chain of refresh Tokens
+	for range 5 {
+		rotatedRefreshToken := generateRefreshToken()
+		require.NoError(t, tokenMgr.Rotate(ctx, refreshToken, rotatedRefreshToken))
+		refreshToken = rotatedRefreshToken
+	}
+
+	// find the latest refresh token
+	final, err := tokenMgr.latestRefreshToken(ctx, orig.RefreshToken)
+	require.NoError(t, err)
+	assert.Equal(t, refreshToken, final)
+
+	// ensure it exists and has no rotated token
+	token, err := tokenMgr.Get(ctx, final)
+	require.NoError(t, err)
+	assert.Empty(t, token.RotatedTo, final)
+
+}
