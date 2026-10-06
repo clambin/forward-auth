@@ -25,14 +25,14 @@ func TestToken_LogValue(t *testing.T) {
 			RefreshToken: "this should not be shown",
 			Identity:     provider.Identity{Email: "foo@example.com"},
 		}
-		assert.Equal(t, "[jti=my-token issuer=test remaining_sec=3600 email=foo@example.com]", token.LogValue().String())
+		assert.Equal(t, `[jti=my-token issuer=test remaining_sec=3600 email=foo@example.com refreshToken=thi...]`, token.LogValue().String())
 	})
 }
 
 func TestRefreshToken_LogValue(t *testing.T) {
 	tests := []struct {
 		name         string
-		refreshToken refreshToken
+		refreshToken RefreshToken
 		want         string
 	}{
 		{"sufficiently long", "0123456789", "012..."},
@@ -140,7 +140,7 @@ func TestTokenStore(t *testing.T) {
 		{
 			name: "memory",
 			tokenStore: &inMemoryTokenStore{
-				items: make(map[refreshToken]inMemoryTokenStoreItem),
+				items: make(map[RefreshToken]inMemoryTokenStoreItem),
 				ttl:   5 * time.Minute,
 			},
 		},
@@ -156,7 +156,7 @@ func TestTokenStore(t *testing.T) {
 			// verify the old refresh token is marked as rotated
 			token, err := s.Get(ctx, "foo")
 			require.NoError(t, err)
-			assert.Equal(t, refreshToken("bar"), token.RotatedTo)
+			assert.Equal(t, RefreshToken("bar"), token.RotatedTo)
 
 			// verify the new refresh token is created
 			token, err = s.Get(ctx, "bar")

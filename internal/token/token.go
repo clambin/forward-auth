@@ -32,7 +32,7 @@ var (
 
 type tokenClaims struct {
 	jwt.RegisteredClaims
-	RefreshToken refreshToken      `json:"refreshToken"`
+	RefreshToken RefreshToken      `json:"refreshToken"`
 	Identity     provider.Identity `json:"identity"`
 }
 
@@ -40,11 +40,18 @@ func (t tokenClaims) Expired() bool {
 	return t.ExpiresAt == nil || t.ExpiresAt.Before(time.Now())
 }
 
-var _ slog.LogValuer = refreshToken("")
+var _ slog.LogValuer = RefreshToken("")
 
-type refreshToken string
+type RefreshToken string
 
-func (r refreshToken) LogValue() slog.Value {
+func generateRefreshToken() RefreshToken {
+	var b [32]byte
+	_, _ = rand.Read(b[:])
+	return RefreshToken(base64.StdEncoding.EncodeToString(b[:]))
+}
+
+func (r RefreshToken) LogValue() slog.Value {
+	// only show the first 3 characters if there's enough entropy
 	if len(r) > 8 {
 		return slog.StringValue(string(r[:3]) + "...")
 	}
@@ -63,10 +70,12 @@ func (t Token) LogValue() slog.Value {
 		slog.String("issuer", t.Issuer),
 		slog.Float64("remaining_sec", time.Until(t.ExpiresAt.Time).Seconds()),
 		slog.String("email", t.Identity.Email),
+		// TODO: remove once done
+		slog.String("refreshToken", t.RefreshToken.LogValue().String()),
 	)
 }
 
-func NewToken(id provider.Identity, accessTokenExpiration time.Duration, refreshToken refreshToken) *Token {
+func NewToken(id provider.Identity, accessTokenExpiration time.Duration, refreshToken RefreshToken) *Token {
 	return &Token{
 		ID:           uuid.New().String(),
 		Issuer:       tokenIssuer,
@@ -124,7 +133,7 @@ type Manager struct {
 type RefreshTokenDetails struct {
 	IssuedAt          time.Time `json:"issuedAt"`
 	provider.Identity `json:"identity"`
-	RotatedTo         refreshToken `json:"rotatedTo"`
+	RotatedTo         RefreshToken `json:"rotatedTo"`
 	Generation        int          `json:"generation"`
 }
 
@@ -133,7 +142,7 @@ func NewTokenManager(ttl time.Duration, cfg configuration.StorageConfiguration) 
 	switch cfg.Type {
 	case "memory", "":
 		store = &inMemoryTokenStore{
-			items: make(map[refreshToken]inMemoryTokenStoreItem),
+			items: make(map[RefreshToken]inMemoryTokenStoreItem),
 			ttl:   ttl,
 		}
 	case "redis":
@@ -173,14 +182,14 @@ func (m *Manager) Validate(ctx context.Context, token *Token, logger *slog.Logge
 	err := m.Rotate(ctx, token.RefreshToken, rotatedRefreshToken)
 	switch {
 	case err == nil:
-		// fall through
+		logger.Debug("refresh token rotated successfully")
 	case errors.Is(err, ErrRefreshTokenAlreadyRotated):
 		// the refresh token was already rotated by another request. attempt to find it
 		rotatedRefreshToken, err = m.latestRefreshToken(ctx, token.RefreshToken)
 		if err != nil {
 			return nil, fmt.Errorf("latest refresh token: %w", err)
 		}
-		logger.Debug("latest refresh token found",
+		logger.Debug("refresh token already rotated. using latest refresh token",
 			slog.Any("refreshToken", rotatedRefreshToken),
 		)
 	default:
@@ -188,10 +197,11 @@ func (m *Manager) Validate(ctx context.Context, token *Token, logger *slog.Logge
 	}
 
 	// generate a new refresh token and return a token based on that refresh token.
-	logger.Debug("returning new JWT token",
-		slog.Any("refreshToken", rotatedRefreshToken),
+	token = NewToken(token.Identity, tokenExpirationDuration, rotatedRefreshToken)
+	logger.Debug("issuing new JWT token",
+		slog.Any("token", token),
 	)
-	return NewToken(token.Identity, tokenExpirationDuration, rotatedRefreshToken), nil
+	return token, nil
 }
 
 // Token returns a new token with a new refresh token for the given identity.
@@ -210,7 +220,7 @@ func (m *Manager) Token(ctx context.Context, id provider.Identity) (*Token, erro
 
 // latestRefreshToken starts with a refresh token and, if rotated, follows the chain of refresh tokens
 // until it finds the current (non-rotated) refresh token.
-func (m *Manager) latestRefreshToken(ctx context.Context, refreshToken refreshToken) (refreshToken, error) {
+func (m *Manager) latestRefreshToken(ctx context.Context, refreshToken RefreshToken) (RefreshToken, error) {
 	for {
 		details, err := m.Get(ctx, refreshToken)
 		if err != nil {
@@ -223,18 +233,12 @@ func (m *Manager) latestRefreshToken(ctx context.Context, refreshToken refreshTo
 	}
 }
 
-func generateRefreshToken() refreshToken {
-	var b [32]byte
-	_, _ = rand.Read(b[:])
-	return refreshToken(base64.StdEncoding.EncodeToString(b[:]))
-}
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 type tokenStore interface {
-	Get(context.Context, refreshToken) (RefreshTokenDetails, error)
-	Set(context.Context, refreshToken, RefreshTokenDetails) error
-	Rotate(context.Context, refreshToken, refreshToken) error
+	Get(context.Context, RefreshToken) (RefreshTokenDetails, error)
+	Set(context.Context, RefreshToken, RefreshTokenDetails) error
+	Rotate(context.Context, RefreshToken, RefreshToken) error
 	Count(context.Context) (int, error)
 }
 
@@ -248,30 +252,30 @@ type redisTokenStore struct {
 	ttl    time.Duration
 }
 
-func (r *redisTokenStore) Get(ctx context.Context, refreshToken refreshToken) (RefreshTokenDetails, error) {
+func (r *redisTokenStore) Get(ctx context.Context, refreshToken RefreshToken) (RefreshTokenDetails, error) {
 	value, err := r.client.Get(ctx, r.key(refreshToken)).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			return RefreshTokenDetails{}, ErrRefreshTokenNotFound
 		}
-		return RefreshTokenDetails{}, fmt.Errorf("refresh token: %w", err)
+		return RefreshTokenDetails{}, fmt.Errorf("redis: %w", err)
 	}
 	var details RefreshTokenDetails
 	err = json.Unmarshal([]byte(value), &details)
 	if err != nil {
-		return RefreshTokenDetails{}, fmt.Errorf("refresh token: %w", err)
+		return RefreshTokenDetails{}, fmt.Errorf("json: %w", err)
 	}
 	return details, nil
 }
 
-func (r *redisTokenStore) Set(ctx context.Context, refreshToken refreshToken, details RefreshTokenDetails) error {
+func (r *redisTokenStore) Set(ctx context.Context, refreshToken RefreshToken, details RefreshTokenDetails) error {
 	value, err := json.Marshal(details)
 	if err != nil {
-		return fmt.Errorf("refresh token: %w", err)
+		return fmt.Errorf("json: %w", err)
 	}
 	err = r.client.Set(ctx, r.key(refreshToken), value, r.ttl).Err()
 	if err != nil {
-		return fmt.Errorf("refresh token: %w", err)
+		return fmt.Errorf("redis: %w", err)
 	}
 	return nil
 }
@@ -303,7 +307,7 @@ redis.call("SET", KEYS[2], cjson.encode(details), "PX", ttl)
 return { "created" }
 `)
 
-func (r *redisTokenStore) Rotate(ctx context.Context, currentRefreshToken, rotatedRefreshToken refreshToken) error {
+func (r *redisTokenStore) Rotate(ctx context.Context, currentRefreshToken, rotatedRefreshToken RefreshToken) error {
 	result, err := rotateScript.Run(ctx, r.client, []string{r.key(currentRefreshToken), r.key(rotatedRefreshToken)}, string(rotatedRefreshToken)).Result()
 	if err != nil {
 		return fmt.Errorf("refresh token: %w", err)
@@ -374,7 +378,7 @@ func (r *redisTokenStore) Count(ctx context.Context) (int, error) {
 	return activeRefreshTokens, nil
 }
 
-func (r *redisTokenStore) key(refreshToken refreshToken) string {
+func (r *redisTokenStore) key(refreshToken RefreshToken) string {
 	return refreshTokenPrefix + string(refreshToken)
 }
 
@@ -384,36 +388,39 @@ type inMemoryTokenStoreItem struct {
 }
 
 type inMemoryTokenStore struct {
-	items map[refreshToken]inMemoryTokenStoreItem
+	items map[RefreshToken]inMemoryTokenStoreItem
 	ttl   time.Duration
 	mu    sync.Mutex
 }
 
-func (i *inMemoryTokenStore) Get(_ context.Context, refreshToken refreshToken) (RefreshTokenDetails, error) {
+func (i *inMemoryTokenStore) Get(_ context.Context, refreshToken RefreshToken) (RefreshTokenDetails, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	item, ok := i.items[refreshToken]
 	if !ok {
 		return RefreshTokenDetails{}, ErrRefreshTokenNotFound
 	}
-	if item.ttl.Before(time.Now()) {
+	if time.Now().After(item.ttl) {
 		delete(i.items, refreshToken)
 		return RefreshTokenDetails{}, ErrRefreshTokenNotFound
 	}
 	return item.details, nil
 }
 
-func (i *inMemoryTokenStore) Set(_ context.Context, refreshToken refreshToken, details RefreshTokenDetails) error {
+func (i *inMemoryTokenStore) Set(_ context.Context, refreshToken RefreshToken, details RefreshTokenDetails) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	now := time.Now()
 	i.items[refreshToken] = inMemoryTokenStoreItem{
 		details: details,
-		ttl:     time.Now().Add(i.ttl),
+		ttl:     now.Add(i.ttl),
 	}
+	// while we're here, remove any expired items
+	i.expire()
 	return nil
 }
 
-func (i *inMemoryTokenStore) Rotate(_ context.Context, oldRefreshToken, newRefreshToken refreshToken) error {
+func (i *inMemoryTokenStore) Rotate(_ context.Context, oldRefreshToken, newRefreshToken RefreshToken) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	item, ok := i.items[oldRefreshToken]
@@ -429,6 +436,9 @@ func (i *inMemoryTokenStore) Rotate(_ context.Context, oldRefreshToken, newRefre
 	item.details.RotatedTo = ""
 	item.details.Generation++
 	i.items[newRefreshToken] = item
+
+	// while we're here, remove any expired items
+	i.expire()
 	return nil
 }
 
@@ -436,8 +446,9 @@ func (i *inMemoryTokenStore) Count(_ context.Context) (int, error) {
 	var activeRefreshTokens int
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	now := time.Now()
 	for k, v := range i.items {
-		if v.ttl.Before(time.Now()) {
+		if now.After(v.ttl) {
 			delete(i.items, k)
 			continue
 		}
@@ -446,6 +457,15 @@ func (i *inMemoryTokenStore) Count(_ context.Context) (int, error) {
 		}
 	}
 	return activeRefreshTokens, nil
+}
+
+func (i *inMemoryTokenStore) expire() {
+	now := time.Now()
+	for k, v := range i.items {
+		if now.After(v.ttl) {
+			delete(i.items, k)
+		}
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
