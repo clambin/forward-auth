@@ -22,6 +22,7 @@ var DefaultConfiguration = Configuration{
 	Server: ServerConfiguration{
 		Addr:       ":8080",
 		CookieName: "forward-auth-session",
+		Key:        "change-me!",
 	},
 	Logger: LoggerConfiguration{
 		Level:  "info",
