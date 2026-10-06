@@ -78,7 +78,7 @@ func handleForwardAuth(
 		currentRefreshToken := tok.RefreshToken
 
 		// validate the token
-		if tok, err = tokenManager.Validate(r.Context(), tok); err != nil {
+		if tok, err = tokenManager.Validate(r.Context(), tok, reqLogger); err != nil {
 			// token was invalid or expired and not refreshable. Redirect to login
 			reqLogger.Error("invalid token in cookie", slog.Any("err", err), slog.String("cookie", cookieName))
 			redirectToLogin(originalURL)

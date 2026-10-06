@@ -92,7 +92,7 @@ func TestHandleForwardAuth(t *testing.T) {
 			const cookieName = "test"
 			var fAuthn fakeAuthenticator
 			fAuthz := fakeAuthorizer{allow: tt.allow}
-			mgr, _ := token.NewTokenManager(time.Hour, configuration.StorageConfiguration{}, slog.New(slog.DiscardHandler))
+			mgr, _ := token.NewTokenManager(time.Hour, configuration.StorageConfiguration{})
 
 			h := handleForwardAuth(
 				cookieName,
@@ -126,7 +126,7 @@ func BenchmarkForwardAuthHandler(b *testing.B) {
 	const cookieName = "test"
 	var fAuthn fakeAuthenticator
 	fAuthz := fakeAuthorizer{allow: true}
-	mgr, _ := token.NewTokenManager(time.Hour, configuration.StorageConfiguration{}, slog.New(slog.DiscardHandler))
+	mgr, _ := token.NewTokenManager(time.Hour, configuration.StorageConfiguration{})
 	s := New(
 		configuration.ServerConfiguration{CookieName: cookieName, Key: "secret", Domain: ".example.com"},
 		mgr,
@@ -196,7 +196,7 @@ func TestHandleLogin(t *testing.T) {
 				codes:  map[string]struct{}{"1234": {}},
 			}
 			const cookieName = "test"
-			mgr, _ := token.NewTokenManager(time.Hour, configuration.StorageConfiguration{}, slog.New(slog.DiscardHandler))
+			mgr, _ := token.NewTokenManager(time.Hour, configuration.StorageConfiguration{})
 			h := handleLogin(
 				cookieName,
 				[]byte("secret"),

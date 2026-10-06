@@ -15,6 +15,33 @@ import (
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 )
 
+func TestToken_LogValue(t *testing.T) {
+	token := Token{
+		ID:           "my-token",
+		RefreshToken: "this should not be shown",
+		Identity:     provider.Identity{Email: "foo@example.com"},
+	}
+	assert.Equal(t, "my-token/foo@example.com", token.LogValue().String())
+}
+
+func TestRefreshToken_LogValue(t *testing.T) {
+	tests := []struct {
+		name         string
+		refreshToken RefreshToken
+		want         string
+	}{
+		{"sufficiently long", "0123456789", "012..."},
+		{"too short", "0123", "<REDACTED>"},
+		{"edge", "012", "<REDACTED>"},
+		{"empty", "", "<REDACTED>"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.refreshToken.LogValue().String())
+		})
+	}
+}
+
 func TestParseToken(t *testing.T) {
 	// valid signing key
 	validKey := []byte("test_signing_key")
@@ -54,7 +81,8 @@ func TestParseToken(t *testing.T) {
 func TestTokenManager_Validate(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := t.Context()
-		mgr, err := NewTokenManager(time.Hour, configuration.StorageConfiguration{}, slog.New(slog.DiscardHandler))
+		logger := slog.New(slog.DiscardHandler)
+		mgr, err := NewTokenManager(time.Hour, configuration.StorageConfiguration{})
 		require.NoError(t, err)
 
 		// create a new token
@@ -62,24 +90,24 @@ func TestTokenManager_Validate(t *testing.T) {
 		require.NoError(t, err)
 
 		// token is valid
-		token, err = mgr.Validate(ctx, token)
+		token, err = mgr.Validate(ctx, token, logger)
 		require.NoError(t, err)
 
 		// before access token expires, the token is valid and Validate() doesn't allocate a new token.
 		time.Sleep(tokenExpirationDuration / 2)
-		token2, err := mgr.Validate(ctx, token)
+		token2, err := mgr.Validate(ctx, token, logger)
 		require.NoError(t, err)
 		assert.Equal(t, token, token2)
 
 		// after access token expires, Validate() allocates a new token.
 		time.Sleep(tokenExpirationDuration)
-		token2, err = mgr.Validate(ctx, token)
+		token2, err = mgr.Validate(ctx, token, logger)
 		require.NoError(t, err)
 		assert.NotEqual(t, token, token2)
 
 		// after refresh token expires, Validate() returns an error.
 		time.Sleep(time.Hour + time.Minute)
-		token2, err = mgr.Validate(ctx, token2)
+		token2, err = mgr.Validate(ctx, token2, logger)
 		require.Error(t, err)
 		assert.Nil(t, token2)
 	})
@@ -107,7 +135,7 @@ func TestTokenStore(t *testing.T) {
 		{
 			name: "memory",
 			tokenStore: &inMemoryTokenStore{
-				items: make(map[string]inMemoryTokenStoreItem),
+				items: make(map[RefreshToken]inMemoryTokenStoreItem),
 				ttl:   5 * time.Minute,
 			},
 		},
@@ -123,7 +151,7 @@ func TestTokenStore(t *testing.T) {
 			// verify the old refresh token is marked as rotated
 			token, err := s.Get(ctx, "foo")
 			require.NoError(t, err)
-			assert.Equal(t, "bar", token.RotatedTo)
+			assert.Equal(t, RefreshToken("bar"), token.RotatedTo)
 
 			// verify the new refresh token is created
 			token, err = s.Get(ctx, "bar")
@@ -165,7 +193,7 @@ func TestTokenManager_Validate_Rollup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tokenMgr, err := NewTokenManager(time.Hour, tt.cfg, slog.New(slog.DiscardHandler))
+			tokenMgr, err := NewTokenManager(time.Hour, tt.cfg)
 			require.NoError(t, err)
 
 			id := provider.Identity{Email: "test@example.com"}

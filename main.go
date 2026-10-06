@@ -48,7 +48,7 @@ func main() {
 
 	authorizer := authz.Authorizer{Rules: cfg.Authz.Rules, Groups: cfg.Authz.Groups}
 
-	tokenMgr, err := token.NewTokenManager(cfg.Session.SessionTTL, cfg.Storage, logger.With("component", "token-manager"))
+	tokenMgr, err := token.NewTokenManager(cfg.Session.SessionTTL, cfg.Storage)
 	if err != nil {
 		logger.Error("failed to create token manager cache", "err", err)
 		os.Exit(1)
