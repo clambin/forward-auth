@@ -327,11 +327,17 @@ func (r *redisTokenStore) Rotate(ctx context.Context, currentRefreshToken, rotat
 }
 
 func (r *redisTokenStore) Count(ctx context.Context) (int, error) {
-	var activeRefreshTokens int
-	keys, _, err := r.client.Scan(ctx, 0, r.key("*"), 0).Result()
-	if err != nil {
+	var keys []string
+	iter := r.client.Scan(ctx, 0, r.key("*"), 100).Iterator()
+	for iter.Next(ctx) {
+		keys = append(keys, iter.Val())
+	}
+	if err := iter.Err(); err != nil {
 		return 0, fmt.Errorf("redis: %w", err)
 	}
+
+	var activeRefreshTokens int
+	var err error
 	cmds := make([]*redis.StringCmd, len(keys))
 	pipe := r.client.Pipeline()
 	for i, key := range keys {
@@ -339,7 +345,7 @@ func (r *redisTokenStore) Count(ctx context.Context) (int, error) {
 	}
 
 	_, err = pipe.Exec(ctx)
-	if err != nil {
+	if err != nil && !errors.Is(err, redis.Nil) {
 		return 0, fmt.Errorf("redis: %w", err)
 	}
 

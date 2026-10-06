@@ -37,6 +37,13 @@ func main() {
 	}
 	logger := cfg.Logger.Logger(os.Stderr)
 
+	/* TODO
+	if len(cfg.Server.Key) < 32 {
+		logger.Error("token key must be at least 32 characters long")
+		os.Exit(1)
+	}
+	*/
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
