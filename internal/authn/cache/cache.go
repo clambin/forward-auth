@@ -125,10 +125,10 @@ func (c *redisCache[T]) Len(ctx context.Context) (int, error) {
 	var found int
 	i := c.client.Scan(ctx, 0, c.prefixedID("*"), maxScanKeys).Iterator()
 	for i.Next(ctx) {
-		if i.Err() != nil {
-			return 0, fmt.Errorf("redis scan: %w", i.Err())
-		}
 		found++
+	}
+	if i.Err() != nil {
+		return 0, fmt.Errorf("redis scan: %w", i.Err())
 	}
 	return found, nil
 }
