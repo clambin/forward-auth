@@ -16,18 +16,23 @@ import (
 )
 
 func TestToken_LogValue(t *testing.T) {
-	token := Token{
-		ID:           "my-token",
-		RefreshToken: "this should not be shown",
-		Identity:     provider.Identity{Email: "foo@example.com"},
-	}
-	assert.Equal(t, "my-token/foo@example.com", token.LogValue().String())
+	// using synctest so the clock doesn't move and the response is deterministic
+	synctest.Test(t, func(t *testing.T) {
+		token := Token{
+			ID:           "my-token",
+			Issuer:       "test",
+			ExpiresAt:    &jwt.NumericDate{Time: time.Now().Add(time.Hour)},
+			RefreshToken: "this should not be shown",
+			Identity:     provider.Identity{Email: "foo@example.com"},
+		}
+		assert.Equal(t, "[jti=my-token issuer=test remaining_sec=3600 email=foo@example.com]", token.LogValue().String())
+	})
 }
 
 func TestRefreshToken_LogValue(t *testing.T) {
 	tests := []struct {
 		name         string
-		refreshToken RefreshToken
+		refreshToken refreshToken
 		want         string
 	}{
 		{"sufficiently long", "0123456789", "012..."},
@@ -135,7 +140,7 @@ func TestTokenStore(t *testing.T) {
 		{
 			name: "memory",
 			tokenStore: &inMemoryTokenStore{
-				items: make(map[RefreshToken]inMemoryTokenStoreItem),
+				items: make(map[refreshToken]inMemoryTokenStoreItem),
 				ttl:   5 * time.Minute,
 			},
 		},
@@ -151,7 +156,7 @@ func TestTokenStore(t *testing.T) {
 			// verify the old refresh token is marked as rotated
 			token, err := s.Get(ctx, "foo")
 			require.NoError(t, err)
-			assert.Equal(t, RefreshToken("bar"), token.RotatedTo)
+			assert.Equal(t, refreshToken("bar"), token.RotatedTo)
 
 			// verify the new refresh token is created
 			token, err = s.Get(ctx, "bar")

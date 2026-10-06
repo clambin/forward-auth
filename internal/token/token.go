@@ -32,7 +32,7 @@ var (
 
 type tokenClaims struct {
 	jwt.RegisteredClaims
-	RefreshToken RefreshToken      `json:"refreshToken"`
+	RefreshToken refreshToken      `json:"refreshToken"`
 	Identity     provider.Identity `json:"identity"`
 }
 
@@ -40,11 +40,11 @@ func (t tokenClaims) Expired() bool {
 	return t.ExpiresAt == nil || t.ExpiresAt.Before(time.Now())
 }
 
-var _ slog.LogValuer = RefreshToken("")
+var _ slog.LogValuer = refreshToken("")
 
-type RefreshToken string
+type refreshToken string
 
-func (r RefreshToken) LogValue() slog.Value {
+func (r refreshToken) LogValue() slog.Value {
 	if len(r) > 8 {
 		return slog.StringValue(string(r[:3]) + "...")
 	}
@@ -58,10 +58,15 @@ type Token struct {
 }
 
 func (t Token) LogValue() slog.Value {
-	return slog.StringValue(t.ID + "/" + t.Identity.Email)
+	return slog.GroupValue(
+		slog.String("jti", t.ID),
+		slog.String("issuer", t.Issuer),
+		slog.Float64("remaining_sec", time.Until(t.ExpiresAt.Time).Seconds()),
+		slog.String("email", t.Identity.Email),
+	)
 }
 
-func NewToken(id provider.Identity, accessTokenExpiration time.Duration, refreshToken RefreshToken) *Token {
+func NewToken(id provider.Identity, accessTokenExpiration time.Duration, refreshToken refreshToken) *Token {
 	return &Token{
 		ID:           uuid.New().String(),
 		Issuer:       tokenIssuer,
@@ -119,7 +124,7 @@ type Manager struct {
 type RefreshTokenDetails struct {
 	IssuedAt          time.Time `json:"issuedAt"`
 	provider.Identity `json:"identity"`
-	RotatedTo         RefreshToken `json:"rotatedTo"`
+	RotatedTo         refreshToken `json:"rotatedTo"`
 	Generation        int          `json:"generation"`
 }
 
@@ -128,7 +133,7 @@ func NewTokenManager(ttl time.Duration, cfg configuration.StorageConfiguration) 
 	switch cfg.Type {
 	case "memory", "":
 		store = &inMemoryTokenStore{
-			items: make(map[RefreshToken]inMemoryTokenStoreItem),
+			items: make(map[refreshToken]inMemoryTokenStoreItem),
 			ttl:   ttl,
 		}
 	case "redis":
@@ -205,7 +210,7 @@ func (m *Manager) Token(ctx context.Context, id provider.Identity) (*Token, erro
 
 // latestRefreshToken starts with a refresh token and, if rotated, follows the chain of refresh tokens
 // until it finds the current (non-rotated) refresh token.
-func (m *Manager) latestRefreshToken(ctx context.Context, refreshToken RefreshToken) (RefreshToken, error) {
+func (m *Manager) latestRefreshToken(ctx context.Context, refreshToken refreshToken) (refreshToken, error) {
 	for {
 		details, err := m.Get(ctx, refreshToken)
 		if err != nil {
@@ -218,18 +223,18 @@ func (m *Manager) latestRefreshToken(ctx context.Context, refreshToken RefreshTo
 	}
 }
 
-func generateRefreshToken() RefreshToken {
+func generateRefreshToken() refreshToken {
 	var b [32]byte
 	_, _ = rand.Read(b[:])
-	return RefreshToken(base64.StdEncoding.EncodeToString(b[:]))
+	return refreshToken(base64.StdEncoding.EncodeToString(b[:]))
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 type tokenStore interface {
-	Get(context.Context, RefreshToken) (RefreshTokenDetails, error)
-	Set(context.Context, RefreshToken, RefreshTokenDetails) error
-	Rotate(context.Context, RefreshToken, RefreshToken) error
+	Get(context.Context, refreshToken) (RefreshTokenDetails, error)
+	Set(context.Context, refreshToken, RefreshTokenDetails) error
+	Rotate(context.Context, refreshToken, refreshToken) error
 	Count(context.Context) (int, error)
 }
 
@@ -243,7 +248,7 @@ type redisTokenStore struct {
 	ttl    time.Duration
 }
 
-func (r *redisTokenStore) Get(ctx context.Context, refreshToken RefreshToken) (RefreshTokenDetails, error) {
+func (r *redisTokenStore) Get(ctx context.Context, refreshToken refreshToken) (RefreshTokenDetails, error) {
 	value, err := r.client.Get(ctx, r.key(refreshToken)).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
@@ -259,7 +264,7 @@ func (r *redisTokenStore) Get(ctx context.Context, refreshToken RefreshToken) (R
 	return details, nil
 }
 
-func (r *redisTokenStore) Set(ctx context.Context, refreshToken RefreshToken, details RefreshTokenDetails) error {
+func (r *redisTokenStore) Set(ctx context.Context, refreshToken refreshToken, details RefreshTokenDetails) error {
 	value, err := json.Marshal(details)
 	if err != nil {
 		return fmt.Errorf("refresh token: %w", err)
@@ -298,7 +303,7 @@ redis.call("SET", KEYS[2], cjson.encode(details), "PX", ttl)
 return { "created" }
 `)
 
-func (r *redisTokenStore) Rotate(ctx context.Context, currentRefreshToken, rotatedRefreshToken RefreshToken) error {
+func (r *redisTokenStore) Rotate(ctx context.Context, currentRefreshToken, rotatedRefreshToken refreshToken) error {
 	result, err := rotateScript.Run(ctx, r.client, []string{r.key(currentRefreshToken), r.key(rotatedRefreshToken)}, string(rotatedRefreshToken)).Result()
 	if err != nil {
 		return fmt.Errorf("refresh token: %w", err)
@@ -369,7 +374,7 @@ func (r *redisTokenStore) Count(ctx context.Context) (int, error) {
 	return activeRefreshTokens, nil
 }
 
-func (r *redisTokenStore) key(refreshToken RefreshToken) string {
+func (r *redisTokenStore) key(refreshToken refreshToken) string {
 	return refreshTokenPrefix + string(refreshToken)
 }
 
@@ -379,12 +384,12 @@ type inMemoryTokenStoreItem struct {
 }
 
 type inMemoryTokenStore struct {
-	items map[RefreshToken]inMemoryTokenStoreItem
+	items map[refreshToken]inMemoryTokenStoreItem
 	ttl   time.Duration
 	mu    sync.Mutex
 }
 
-func (i *inMemoryTokenStore) Get(_ context.Context, refreshToken RefreshToken) (RefreshTokenDetails, error) {
+func (i *inMemoryTokenStore) Get(_ context.Context, refreshToken refreshToken) (RefreshTokenDetails, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	item, ok := i.items[refreshToken]
@@ -398,7 +403,7 @@ func (i *inMemoryTokenStore) Get(_ context.Context, refreshToken RefreshToken) (
 	return item.details, nil
 }
 
-func (i *inMemoryTokenStore) Set(_ context.Context, refreshToken RefreshToken, details RefreshTokenDetails) error {
+func (i *inMemoryTokenStore) Set(_ context.Context, refreshToken refreshToken, details RefreshTokenDetails) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	i.items[refreshToken] = inMemoryTokenStoreItem{
@@ -408,7 +413,7 @@ func (i *inMemoryTokenStore) Set(_ context.Context, refreshToken RefreshToken, d
 	return nil
 }
 
-func (i *inMemoryTokenStore) Rotate(_ context.Context, oldRefreshToken, newRefreshToken RefreshToken) error {
+func (i *inMemoryTokenStore) Rotate(_ context.Context, oldRefreshToken, newRefreshToken refreshToken) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	item, ok := i.items[oldRefreshToken]

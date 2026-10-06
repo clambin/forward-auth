@@ -19,11 +19,10 @@ const (
 )
 
 // handleForwardAuth is the main handler for the forward-auth middleware.
-// It authenticates the user by extracting the session cookie from the request and validating it against the session store.
-// If the session is missing/invalid, the user is redirected to the OIDC login page.
-// If the session is valid, the user is authorized and the request is forwarded to the original destination.
-//
-// TODO: review doc vs implementation
+// It authenticates the user by validating the JWT token in the session cookie:
+// - If the token has expired, the token manager attempts to refresh the token.
+// - If the token is invalid, or could not be refreshed, the user is redirected to the OIDC login page to create a new session.
+// Once the user is authenticated, the request is authorized and the request is forwarded to the original destination.
 func handleForwardAuth(
 	cookieName string,
 	key []byte,
@@ -47,7 +46,6 @@ func handleForwardAuth(
 		)
 
 		// redirect to login page
-		// TODO: this ignores the original method. Should we limit this to GET requests?
 		redirectToLogin := func(originalURL *url.URL) {
 			redirectURL, err := authenticator.InitiateLogin(r.Context(), originalURL.String())
 			if err != nil {
@@ -87,9 +85,6 @@ func handleForwardAuth(
 
 		// if the token has changed, update it in the response's cookie and redirect so the browser tries again.
 		if tok.RefreshToken != currentRefreshToken {
-			// TODO: remove this when done.
-			reqLogger.Debug("new token", slog.Any("token", tok))
-
 			signedToken, err = tok.Sign(key)
 			if err != nil {
 				reqLogger.Error("failed to sign token", slog.Any("err", err))
@@ -115,10 +110,8 @@ func handleForwardAuth(
 }
 
 // handleLogin is called by the OICD provider after the user has logged in.
-// It registers the session in the session store and redirects the user to the original destination.
+// It establishes a session through a JWT token and redirects the user to the original destination.
 // This will trigger another call to forwardAuthHandler, which authenticates the user and authorizes the request.
-//
-// TODO: review
 func handleLogin(
 	cookieName string,
 	key []byte,
