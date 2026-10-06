@@ -6,8 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/clambin/forward-auth/internal/authn/cache"
 	"github.com/clambin/forward-auth/internal/authn/provider"
-	"github.com/clambin/forward-auth/internal/cache"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"golang.org/x/oauth2"
 )

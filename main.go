@@ -12,8 +12,8 @@ import (
 
 	"codeberg.org/clambin/go-common/httputils"
 	"github.com/clambin/forward-auth/internal/authn"
+	"github.com/clambin/forward-auth/internal/authn/cache"
 	"github.com/clambin/forward-auth/internal/authz"
-	"github.com/clambin/forward-auth/internal/cache"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/server"
 	"github.com/clambin/forward-auth/internal/server/middleware"
