@@ -3,6 +3,7 @@ package authn
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/configuration"
@@ -12,7 +13,10 @@ import (
 
 func TestInstrumentedManager(t *testing.T) {
 	authenticator, _ := New(t.Context(), configuration.Configuration{
-		Authn: configuration.AuthnConfiguration{Provider: provider.Configuration{Type: "github"}},
+		Authn: configuration.AuthnConfiguration{
+			Provider: provider.Configuration{Type: "github"},
+			StateTTL: 5 * time.Minute,
+		},
 	})
 	_, _ = authenticator.InitiateLogin(t.Context(), "www.example.com")
 

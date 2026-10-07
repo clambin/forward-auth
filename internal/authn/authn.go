@@ -6,8 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/clambin/forward-auth/internal/authn/cache"
 	"github.com/clambin/forward-auth/internal/authn/provider"
-	"github.com/clambin/forward-auth/internal/cache"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"golang.org/x/oauth2"
 )
@@ -78,6 +78,10 @@ func (m *Authenticator) ConfirmLogin(ctx context.Context, state string, code str
 		return provider.Identity{}, "", fmt.Errorf("confirm login: %w", err)
 	}
 	return userInfo, u, nil
+}
+
+func (m *Authenticator) Len(ctx context.Context) (int, error) {
+	return m.states.Len(ctx)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -14,12 +14,12 @@ type InstrumentedAuthenticator struct {
 	*Authenticator
 }
 
-func (i InstrumentedAuthenticator) Describe(ch chan<- *prometheus.Desc) {
+func (a InstrumentedAuthenticator) Describe(ch chan<- *prometheus.Desc) {
 	ch <- stateCountMetric
 }
 
-func (i InstrumentedAuthenticator) Collect(ch chan<- prometheus.Metric) {
-	count, err := i.states.Len(context.Background())
+func (a InstrumentedAuthenticator) Collect(ch chan<- prometheus.Metric) {
+	count, err := a.states.Len(context.Background())
 	if err != nil {
 		return
 	}

@@ -135,7 +135,7 @@ that is passed via an **HTTP cookie**.
 
 #### Session Store
 
-- Stores session data (ID, user, timestamps)
+- Stores session data (ID, user, timestamps, refresh token)
 - Backends:
     - `local` (in-memory)
     - `redis`
@@ -145,7 +145,7 @@ Note: Redis must be 6.2 or higher.
 #### Session Cookie
 
 - Stored in browser
-- Contains session ID
+- Implemented as a JWT that refreshes every 15 minutes
 
 #### Protected application(s)
 
@@ -185,7 +185,9 @@ server:
   # Domain for which the cookie is valid. 
   # All protected hostnames (including auth) need to be subdomains of this domain.
   domain: .example.com
-
+  # Key to sign and verify the JWT cookie
+  # Must be at least 32 characters long
+  key: "my-really-very-long-secret-signing-key"
 logger:
   # Logging level. Default: "info".
   level: info
@@ -317,6 +319,8 @@ spec:
       - X-Forwarded-User-Email
       - X-Forwarded-User-Name
       - X-Forwarded-User-Groups
+    addAuthCookiesToResponse:
+      - forward-auth-session
 ```
 
 ---

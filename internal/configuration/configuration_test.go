@@ -40,6 +40,7 @@ func TestLoggerConfiguration_Logger(t *testing.T) {
 
 func TestConfiguration_Unmarshal(t *testing.T) {
 	cfg := DefaultConfiguration
+	cfg.Server.Key = "my-token-signing-key"
 	cfg.Authz = AuthzConfiguration{
 		Rules: []authz.Rule{
 			{Domain: "*.example.com", Groups: []string{"users"}},

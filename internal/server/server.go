@@ -11,7 +11,7 @@ import (
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/server/web"
-	"github.com/clambin/forward-auth/internal/sessions"
+	"github.com/clambin/forward-auth/internal/token"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -40,7 +40,7 @@ type RedisClient interface {
 // New returns a new http.Handler that serves all API endpoints and the web frontend.
 func New(
 	cfg configuration.ServerConfiguration,
-	sessionManager *sessions.UserSessionManager,
+	tokenManager *token.Manager,
 	authenticator Authenticator,
 	authorizer Authorizer,
 	redisClient RedisClient,
@@ -51,32 +51,48 @@ func New(
 
 	mux.Handle("/api/auth/forwardauth",
 		metrics.InstrumentedHandler("forwardauth")(
-			sessionManager.Middleware(cfg.CookieName, false)(
-				forwardAuthHandler(authenticator, authorizer, logger.With(slog.String("handler", "forwardAuth"))),
+			handleForwardAuth(
+				cfg.CookieName,
+				[]byte(cfg.Key),
+				cfg.Domain,
+				tokenManager,
+				authenticator,
+				authorizer,
+				logger.With(slog.String("handler", "forwardAuth")),
 			),
 		),
 	)
 	mux.Handle("/api/auth/login",
 		metrics.InstrumentedHandler("login")(
-			loginHandler(cfg.CookieName, cfg.Domain, authenticator, sessionManager, logger.With(slog.String("handler", "login"))),
-		),
-	)
-
-	sessionMux := http.NewServeMux()
-	sessionMux.Handle("GET /api/sessions/list",
-		getSessionsHandler(sessionManager, logger.With(slog.String("handler", "getSessions"))),
-	)
-	sessionMux.Handle("DELETE /api/sessions/session/{id}",
-		deleteSessionHandler(sessionManager, logger.With(slog.String("handler", "deleteSession"))),
-	)
-	mux.Handle("/api/sessions/",
-		metrics.InstrumentedHandler("session")(
-			sessionManager.Middleware(cfg.CookieName, true)(
-				sessionMux,
+			handleLogin(
+				cfg.CookieName,
+				[]byte(cfg.Key),
+				cfg.Domain,
+				tokenManager,
+				authenticator,
+				logger.With(slog.String("handler", "login")),
 			),
 		),
 	)
 
+	/*
+		TODO: fix
+		sessionMux := http.NewServeMux()
+		sessionMux.Handle("GET /api/sessions/list",
+			getSessionsHandler(sessionManager, logger.With(slog.String("handler", "getSessions"))),
+		)
+		sessionMux.Handle("DELETE /api/sessions/session/{id}",
+			deleteSessionHandler(sessionManager, logger.With(slog.String("handler", "deleteSession"))),
+		)
+		mux.Handle("/api/sessions/",
+			metrics.InstrumentedHandler("session")(
+				sessionManager.Middleware(cfg.CookieName, true)(
+					sessionMux,
+				),
+			),
+		)
+
+	*/
 	mux.Handle("/", web.New())
 	mux.Handle("/healthz", healthCheckHandler(redisClient, logger.With("handler", "healthCheck")))
 
