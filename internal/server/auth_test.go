@@ -84,7 +84,7 @@ func TestHandleForwardAuth(t *testing.T) {
 		{"invalid session", false, 0, true, http.StatusSeeOther},
 		{"valid session, not allowed", true, 0, false, http.StatusForbidden},
 		{"valid session, allowed", true, 0, true, http.StatusOK},
-		{"valid expired jwt", true, -time.Hour, true, http.StatusSeeOther},
+		{"valid expired jwt", true, -time.Hour, true, http.StatusOK},
 	}
 
 	for _, tt := range tests {

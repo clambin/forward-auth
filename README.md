@@ -319,6 +319,8 @@ spec:
       - X-Forwarded-User-Email
       - X-Forwarded-User-Name
       - X-Forwarded-User-Groups
+    addAuthCookiesToResponse:
+      - forward-auth-session
 ```
 
 ---

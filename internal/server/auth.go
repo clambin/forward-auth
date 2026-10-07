@@ -66,7 +66,7 @@ func handleForwardAuth(
 		signedToken := cookie.Value
 		tok, err := token.ParseToken(signedToken, key)
 		if err != nil {
-			reqLogger.Error("failed to parse cookie", slog.Any("err", err))
+			reqLogger.Error("invalid token in cookie", slog.Any("err", err))
 			redirectToLogin(originalURL)
 			return
 		}
@@ -83,7 +83,7 @@ func handleForwardAuth(
 			return
 		}
 
-		// if the token has changed, update it in the response's cookie and redirect so the browser tries again.
+		// if the token has changed, sign it so we can send it back to the client.
 		if tok.RefreshToken != currentRefreshToken {
 			signedToken, err = tok.Sign(key)
 			if err != nil {
@@ -92,8 +92,8 @@ func handleForwardAuth(
 				return
 			}
 			setTokenCookie(w, cookieName, signedToken, domain)
-			http.Redirect(w, r, originalURL.String(), http.StatusSeeOther)
-			return
+			//http.Redirect(w, r, originalURL.String(), http.StatusSeeOther)
+			//return
 		}
 
 		// is the request authorized?
