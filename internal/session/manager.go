@@ -48,7 +48,7 @@ func New(ttl time.Duration, cfg configuration.StorageConfiguration) (*Manager, e
 			Password: cfg.Redis.Password,
 			DB:       cfg.Redis.DB,
 		})
-		store = &RedisStore{Client: redisClient}
+		store = &RedisStore{Client: redisClient, TTL: ttl}
 	default:
 		return nil, fmt.Errorf("unknown store type: %s", cfg.Type)
 	}
