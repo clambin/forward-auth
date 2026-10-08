@@ -25,7 +25,7 @@ counter 10
 `)))
 }
 
-type counterFunc (func(context.Context) (int, error))
+type counterFunc func(context.Context) (int, error)
 
 func (c counterFunc) Len(ctx context.Context) (int, error) {
 	return c(ctx)

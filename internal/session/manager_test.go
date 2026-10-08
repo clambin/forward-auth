@@ -56,7 +56,7 @@ func TestManager(t *testing.T) {
 			assert.False(t, token.Expired())
 
 			// only 1 session should exist
-			found, err := mgr.store.Len(ctx)
+			found, err := mgr.Len(ctx)
 			require.NoError(t, err)
 			assert.Equal(t, 1, found)
 

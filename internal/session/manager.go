@@ -73,7 +73,7 @@ func (m *Manager) CreateSession(ctx context.Context, id provider.Identity, r *ht
 		LastSeen:         now,
 		UserAgent:        userAgent,
 	}
-	if err := m.store.put(ctx, m.key(token), session); err != nil {
+	if err := m.put(ctx, m.key(token), session); err != nil {
 		return token, err
 	}
 	return token, nil
@@ -83,7 +83,7 @@ func (m *Manager) CreateSession(ctx context.Context, id provider.Identity, r *ht
 // the user agent and the last refresh time in the store. It returns the updated token.
 func (m *Manager) Validate(ctx context.Context, token Token, r *http.Request) (Token, error) {
 	// if the session doesn't exist, it's an error
-	session, err := m.store.get(ctx, m.key(token))
+	session, err := m.get(ctx, m.key(token))
 	if err != nil {
 		return token, err
 	}
@@ -98,7 +98,7 @@ func (m *Manager) Validate(ctx context.Context, token Token, r *http.Request) (T
 	if r != nil {
 		session.UserAgent = r.Header.Get("User-Agent")
 	}
-	err = m.store.put(ctx, m.key(token), session)
+	err = m.put(ctx, m.key(token), session)
 	if err != nil {
 		return token, err
 	}
