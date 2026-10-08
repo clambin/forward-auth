@@ -11,7 +11,7 @@ import (
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/server/web"
-	"github.com/clambin/forward-auth/internal/token"
+	"github.com/clambin/forward-auth/internal/session"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -40,7 +40,7 @@ type RedisClient interface {
 // New returns a new http.Handler that serves all API endpoints and the web frontend.
 func New(
 	cfg configuration.ServerConfiguration,
-	tokenManager *token.Manager,
+	tokenManager *session.Manager,
 	authenticator Authenticator,
 	authorizer Authorizer,
 	redisClient RedisClient,
@@ -75,24 +75,10 @@ func New(
 		),
 	)
 
-	/*
-		TODO: fix
-		sessionMux := http.NewServeMux()
-		sessionMux.Handle("GET /api/sessions/list",
-			getSessionsHandler(sessionManager, logger.With(slog.String("handler", "getSessions"))),
-		)
-		sessionMux.Handle("DELETE /api/sessions/session/{id}",
-			deleteSessionHandler(sessionManager, logger.With(slog.String("handler", "deleteSession"))),
-		)
-		mux.Handle("/api/sessions/",
-			metrics.InstrumentedHandler("session")(
-				sessionManager.Middleware(cfg.CookieName, true)(
-					sessionMux,
-				),
-			),
-		)
+	mux.Handle("/api/sessions/", http.StripPrefix("/api/sessions", handleSessions(
+		tokenManager,
+	)))
 
-	*/
 	mux.Handle("/", web.New())
 	mux.Handle("/healthz", healthCheckHandler(redisClient, logger.With("handler", "healthCheck")))
 

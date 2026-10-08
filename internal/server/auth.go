@@ -9,7 +9,7 @@ import (
 	"strings"
 	"uuid"
 
-	"github.com/clambin/forward-auth/internal/token"
+	"github.com/clambin/forward-auth/internal/session"
 )
 
 const (
@@ -27,7 +27,7 @@ func handleForwardAuth(
 	cookieName string,
 	key []byte,
 	domain string,
-	tokenManager *token.Manager,
+	sessionManager *session.Manager,
 	authenticator Authenticator,
 	authorizer Authorizer,
 	logger *slog.Logger,
@@ -64,47 +64,41 @@ func handleForwardAuth(
 			return
 		}
 		signedToken := cookie.Value
-		tok, err := token.ParseToken(signedToken, key)
+		token, err := session.ParseToken(signedToken, key)
 		if err != nil {
 			reqLogger.Error("invalid token in cookie", slog.Any("err", err))
 			redirectToLogin(originalURL)
 			return
 		}
 
-		// TODO: remove this when done.
-		reqLogger.Debug("parsed token", slog.Any("token", tok))
-		currentRefreshToken := tok.RefreshToken
+		// if the token has expired, request a new one from the sessionManager
+		if token.Expired() {
+			token, err = sessionManager.Validate(r.Context(), token, r)
+			if err != nil {
+				reqLogger.Error("failed to refresh token", slog.Any("err", err))
+				redirectToLogin(originalURL)
+				return
+			}
 
-		// validate the token
-		if tok, err = tokenManager.Validate(r.Context(), tok, reqLogger); err != nil {
-			// token was invalid or expired and not refreshable. Redirect to login
-			reqLogger.Error("invalid token in cookie", slog.Any("err", err), slog.String("cookie", cookieName))
-			redirectToLogin(originalURL)
-			return
-		}
-
-		// if the token has changed, sign it so we can send it back to the client.
-		if tok.RefreshToken != currentRefreshToken {
-			signedToken, err = tok.Sign(key)
+			signedToken, err = token.Sign(key)
 			if err != nil {
 				reqLogger.Error("failed to sign token", slog.Any("err", err))
 				http.Error(w, "failed to sign token", http.StatusInternalServerError)
 				return
 			}
+
 			setTokenCookie(w, cookieName, signedToken, domain)
-			//http.Redirect(w, r, originalURL.String(), http.StatusSeeOther)
-			//return
 		}
 
 		// is the request authorized?
-		if !authorizer.Allow(originalURL, tok.Identity.Email) {
-			reqLogger.Warn("request forbidden by authorizer", slog.Any("id", tok.Identity))
+		if !authorizer.Allow(originalURL, token.Subject) {
+			reqLogger.Warn("request forbidden by authorizer", slog.Any("id", token.Subject))
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 
 		// the request is authorized
-		setUserHeaders(w, tok, authorizer.GroupsForUser(tok.Identity.Email))
+		setUserHeaders(w, token, authorizer.GroupsForUser(token.Identity.Email))
 		w.WriteHeader(http.StatusOK)
 	})
 }
@@ -116,7 +110,7 @@ func handleLogin(
 	cookieName string,
 	key []byte,
 	domain string,
-	tokenManager *token.Manager,
+	tokenManager *session.Manager,
 	authenticator Authenticator,
 	logger *slog.Logger,
 ) http.Handler {
@@ -143,7 +137,7 @@ func handleLogin(
 		ulog.Debug("user validated successfully")
 
 		// create a token for the new session
-		tok, err := tokenManager.Token(r.Context(), userInfo)
+		tok, err := tokenManager.CreateSession(r.Context(), userInfo, r)
 		if err != nil {
 			ulog.Error("failed to create token", slog.Any("err", err))
 			http.Error(w, "failed to create session", http.StatusInternalServerError)
@@ -196,7 +190,7 @@ func originalRequest(r *http.Request) (string, *url.URL) {
 }
 
 // setUserHeaders sets the user headers on the response. Blank headers are not set.
-func setUserHeaders(w http.ResponseWriter, token *token.Token, groups []string) {
+func setUserHeaders(w http.ResponseWriter, token session.Token, groups []string) {
 	h := w.Header()
 	h.Set(forwardedUserEmailHeader, token.Identity.Email)
 	if token.Identity.Name != "" {
