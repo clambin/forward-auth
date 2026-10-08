@@ -50,7 +50,7 @@ func (t RefreshToken) hash() refreshTokenHash {
 type refreshTokenHash [sha256.Size]byte
 
 func (h refreshTokenHash) MarshalJSON() ([]byte, error) {
-	return json.Marshal(base64.StdEncoding.EncodeToString(h[:]))
+	return json.Marshal(h.String())
 }
 
 func (h *refreshTokenHash) UnmarshalJSON(b []byte) error {
@@ -63,6 +63,10 @@ func (h *refreshTokenHash) UnmarshalJSON(b []byte) error {
 		copy(h[:], raw)
 	}
 	return err
+}
+
+func (h *refreshTokenHash) String() string {
+	return base64.StdEncoding.EncodeToString(h[:])
 }
 
 type Token struct {

@@ -77,6 +77,7 @@ func New(
 
 	mux.Handle("/api/sessions/", http.StripPrefix("/api/sessions", handleSessions(
 		tokenManager,
+		logger,
 	)))
 
 	mux.Handle("/", web.New())

@@ -15,6 +15,11 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const (
+	namespaceKeyPrefix = "forward-auth"
+	subsystemKeyPrefix = "session"
+)
+
 var (
 	ErrSessionNotFound     = errors.New("session not found")
 	ErrInvalidRefreshToken = errors.New("invalid refresh token")
@@ -110,7 +115,8 @@ func (m *Manager) Validate(ctx context.Context, token Token, r *http.Request) (T
 
 func (m *Manager) key(token Token) string {
 	return strings.Join([]string{
-		"session",
+		namespaceKeyPrefix,
+		subsystemKeyPrefix,
 		token.Identity.Email,
 		token.SessionID,
 	}, ":")
@@ -122,6 +128,7 @@ type store interface {
 	put(ctx context.Context, key string, session Session) error
 	get(ctx context.Context, key string) (Session, error)
 	Len(ctx context.Context) (int, error)
+	List(ctx context.Context, email string) ([]Session, error)
 }
 
 var (
@@ -143,6 +150,16 @@ func (s InMemoryStore) get(_ context.Context, key string) (Session, error) {
 		return session, nil
 	}
 	return Session{}, ErrSessionNotFound
+}
+
+func (s InMemoryStore) List(_ context.Context, email string) ([]Session, error) {
+	sessions := make([]Session, 0, s.Cache.Len())
+	for k, v := range s.Cache.Iterate() {
+		if !strings.HasPrefix(k, namespaceKeyPrefix+":"+subsystemKeyPrefix+":"+email+":") {
+		}
+		return append(sessions, v), nil
+	}
+	return sessions, nil
 }
 
 func (s InMemoryStore) Len(_ context.Context) (int, error) {
@@ -176,8 +193,37 @@ func (s RedisStore) get(ctx context.Context, key string) (Session, error) {
 	return session, nil
 }
 
+func (s RedisStore) List(ctx context.Context, email string) ([]Session, error) {
+	cmds := make(map[string]*redis.StringCmd)
+	pipe := s.Client.Pipeline()
+	i := s.Client.Scan(ctx, 0, namespaceKeyPrefix+":"+subsystemKeyPrefix+":"+email+":*", 100).Iterator()
+	for i.Next(ctx) {
+		key := i.Val()
+		cmds[key] = pipe.Get(ctx, key)
+	}
+	if i.Err() != nil {
+		return nil, fmt.Errorf("redis: %w", i.Err())
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return nil, fmt.Errorf("redis: %w", err)
+	}
+	sessions := make([]Session, 0, len(cmds))
+	for _, cmd := range cmds {
+		val, err := cmd.Result()
+		if errors.Is(err, redis.Nil) {
+			continue
+		}
+		var session Session
+		if err = json.Unmarshal([]byte(val), &session); err != nil {
+			return nil, fmt.Errorf("json: %w", err)
+		}
+		sessions = append(sessions, session)
+	}
+	return sessions, nil
+}
+
 func (s RedisStore) Len(ctx context.Context) (int, error) {
-	i := s.Client.Scan(ctx, 0, "session:*", 100).Iterator()
+	i := s.Client.Scan(ctx, 0, namespaceKeyPrefix+":"+subsystemKeyPrefix+":*", 100).Iterator()
 	var found int
 	for i.Next(ctx) {
 		found++

@@ -60,16 +60,17 @@ func TestManager(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, 1, found)
 
-			// invalidate the refresh token
+			// list the sessions
+			sessions, err := mgr.List(ctx, "foo@example.com")
+			require.NoError(t, err)
+			require.Len(t, sessions, 1)
+			assert.Equal(t, "foo@example.com", sessions[0].Identity.Email)
+
+			// invalidate the token
 			token.RefreshToken = generateRefreshToken()
 			_, err = mgr.Validate(ctx, token, req)
 			require.ErrorIs(t, err, ErrInvalidRefreshToken)
 
-			// validate the store
-			// TODO
-			//session, err := mgr.Store.Get(ctx, "session:"+token.SessionID)
-			//require.NoError(t, err)
-			//assert.Equal(t, id, session.Identity)
 		})
 	}
 }
