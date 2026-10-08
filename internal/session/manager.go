@@ -63,13 +63,12 @@ func (m *Manager) CreateSession(ctx context.Context, id provider.Identity, r *ht
 	// store a session in the data store
 	session := Session{
 		ID:               token.ID,
-		Identity:         provider.Identity{},
+		Identity:         id,
 		RefreshTokenHash: token.RefreshToken.hash(),
 		IssuedAt:         time.Now(),
 		UserAgent:        r.Header.Get("User-Agent"),
 	}
-	err := m.Store.Put(ctx, m.key(token), session)
-	if err != nil {
+	if err := m.Store.Put(ctx, m.key(token), session); err != nil {
 		return token, err
 	}
 	return token, nil

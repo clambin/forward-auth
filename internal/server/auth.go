@@ -45,7 +45,6 @@ func handleForwardAuth(
 			),
 		)
 
-		// redirect to login page
 		redirectToLogin := func(originalURL *url.URL) {
 			redirectURL, err := authenticator.InitiateLogin(r.Context(), originalURL.String())
 			if err != nil {

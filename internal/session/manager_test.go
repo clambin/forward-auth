@@ -38,10 +38,11 @@ func TestManager(t *testing.T) {
 			require.NoError(t, err)
 
 			// create a session
-			token, err := mgr.CreateSession(ctx, provider.Identity{Email: "foo@example.com"}, req)
+			id := provider.Identity{Email: "foo@example.com", Name: "foo", Subject: "1234"}
+			token, err := mgr.CreateSession(ctx, id, req)
 			require.NoError(t, err)
 
-			assert.Equal(t, "foo@example.com", token.Identity.Email)
+			assert.Equal(t, id, token.Identity)
 			assert.False(t, token.Expired())
 
 			// expire the token
@@ -63,6 +64,12 @@ func TestManager(t *testing.T) {
 			token.RefreshToken = generateRefreshToken()
 			_, err = mgr.Validate(ctx, token, req)
 			require.ErrorIs(t, err, ErrInvalidRefreshToken)
+
+			// validate the store
+			// TODO
+			//session, err := mgr.Store.Get(ctx, "session:"+token.SessionID)
+			//require.NoError(t, err)
+			//assert.Equal(t, id, session.Identity)
 		})
 	}
 }
