@@ -74,7 +74,7 @@ func main() {
 	metrics := middleware.GetMetrics()
 	prometheus.MustRegister(
 		metrics,
-		&session.InstrumentedTokenManager{
+		&session.InstrumentedSessionManager{
 			SessionMgr: sessionMgr,
 			Desc: prometheus.NewDesc(
 				"forward_auth_session_count",

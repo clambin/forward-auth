@@ -91,8 +91,8 @@ func handleForwardAuth(
 		}
 
 		// is the request authorized?
-		if !authorizer.Allow(originalURL, token.Subject) {
-			reqLogger.Warn("request forbidden by authorizer", slog.Any("id", token.Subject))
+		if !authorizer.Allow(originalURL, token.Identity.Email) {
+			reqLogger.Warn("request forbidden by authorizer", slog.Any("id", token.Identity.Email))
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}

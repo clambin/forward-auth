@@ -67,9 +67,9 @@ func (h *refreshTokenHash) UnmarshalJSON(b []byte) error {
 
 type Token struct {
 	jwt.RegisteredClaims
+	Identity     provider.Identity `json:"identity"`
 	SessionID    string            `json:"sessionID"`
 	RefreshToken RefreshToken      `json:"refreshToken"` // TODO: as RefreshToken?
-	Identity     provider.Identity `json:"identity"`
 }
 
 func generateToken(id provider.Identity) Token {

@@ -23,12 +23,12 @@ var (
 
 // A Session represents a user session on the server.
 type Session struct {
-	ID               string            `json:"id"`
-	Identity         provider.Identity `json:"identity"`
-	RefreshTokenHash refreshTokenHash  `json:"refreshTokenHash"`
 	IssuedAt         time.Time         `json:"issuedAt"`
 	LastSeen         time.Time         `json:"lastSeen"`
+	Identity         provider.Identity `json:"identity"`
+	ID               string            `json:"id"`
 	UserAgent        string            `json:"userAgent"`
+	RefreshTokenHash refreshTokenHash  `json:"refreshTokenHash"`
 }
 
 // A Manager validates the session ID from the http request's session JWT against its data store.
@@ -54,14 +54,6 @@ func New(ttl time.Duration, cfg configuration.StorageConfiguration) (*Manager, e
 		return nil, fmt.Errorf("unknown store type: %s", cfg.Type)
 	}
 	return &Manager{Store: store}, nil
-}
-
-func mustNew(ttl time.Duration, cfg configuration.StorageConfiguration) *Manager {
-	manager, err := New(ttl, cfg)
-	if err != nil {
-		panic(err)
-	}
-	return manager
 }
 
 // CreateSession creates a new session and returns a JWT token to be sent back to the client.
@@ -187,18 +179,18 @@ func (s RedisStore) Len(ctx context.Context) (int, error) {
 	return found, i.Err()
 }
 
-var _ prometheus.Collector = &InstrumentedTokenManager{}
+var _ prometheus.Collector = &InstrumentedSessionManager{}
 
-type InstrumentedTokenManager struct {
+type InstrumentedSessionManager struct {
 	SessionMgr *Manager
 	Desc       *prometheus.Desc
 }
 
-func (m InstrumentedTokenManager) Describe(descs chan<- *prometheus.Desc) {
+func (m InstrumentedSessionManager) Describe(descs chan<- *prometheus.Desc) {
 	descs <- m.Desc
 }
 
-func (m InstrumentedTokenManager) Collect(metrics chan<- prometheus.Metric) {
+func (m InstrumentedSessionManager) Collect(metrics chan<- prometheus.Metric) {
 	count, err := m.SessionMgr.Store.Len(context.Background())
 	if err == nil {
 		metrics <- prometheus.MustNewConstMetric(m.Desc, prometheus.GaugeValue, float64(count))
