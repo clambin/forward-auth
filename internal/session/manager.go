@@ -12,7 +12,6 @@ import (
 	"codeberg.org/clambin/go-common/cache"
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/configuration"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -34,11 +33,11 @@ type Session struct {
 // A Manager validates the session ID from the http request's session JWT against its data store.
 // The session is refreshed each time the session JWT expires.  At this point, we generate a new refresh token.
 type Manager struct {
-	Store Store
+	store
 }
 
 func New(ttl time.Duration, cfg configuration.StorageConfiguration) (*Manager, error) {
-	var store Store
+	var store store
 	switch cfg.Type {
 	case "local", "":
 		store = &InMemoryStore{Cache: cache.New[string, Session](ttl, time.Minute)}
@@ -53,7 +52,7 @@ func New(ttl time.Duration, cfg configuration.StorageConfiguration) (*Manager, e
 	default:
 		return nil, fmt.Errorf("unknown store type: %s", cfg.Type)
 	}
-	return &Manager{Store: store}, nil
+	return &Manager{store: store}, nil
 }
 
 // CreateSession creates a new session and returns a JWT token to be sent back to the client.
@@ -61,14 +60,20 @@ func (m *Manager) CreateSession(ctx context.Context, id provider.Identity, r *ht
 	// create the session token, to be sent back to the client
 	token := generateToken(id)
 	// store a session in the data store
+	var userAgent string
+	if r != nil {
+		userAgent = r.Header.Get("User-Agent")
+	}
+	now := time.Now()
 	session := Session{
 		ID:               token.ID,
 		Identity:         id,
 		RefreshTokenHash: token.RefreshToken.hash(),
-		IssuedAt:         time.Now(),
-		UserAgent:        r.Header.Get("User-Agent"),
+		IssuedAt:         now,
+		LastSeen:         now,
+		UserAgent:        userAgent,
 	}
-	if err := m.Store.Put(ctx, m.key(token), session); err != nil {
+	if err := m.store.put(ctx, m.key(token), session); err != nil {
 		return token, err
 	}
 	return token, nil
@@ -78,7 +83,7 @@ func (m *Manager) CreateSession(ctx context.Context, id provider.Identity, r *ht
 // the user agent and the last refresh time in the store. It returns the updated token.
 func (m *Manager) Validate(ctx context.Context, token Token, r *http.Request) (Token, error) {
 	// if the session doesn't exist, it's an error
-	session, err := m.Store.Get(ctx, m.key(token))
+	session, err := m.store.get(ctx, m.key(token))
 	if err != nil {
 		return token, err
 	}
@@ -89,9 +94,11 @@ func (m *Manager) Validate(ctx context.Context, token Token, r *http.Request) (T
 	}
 
 	// update the user agent, last refresh time in the store
-	session.UserAgent = r.Header.Get("User-Agent")
 	session.LastSeen = time.Now()
-	err = m.Store.Put(ctx, m.key(token), session)
+	if r != nil {
+		session.UserAgent = r.Header.Get("User-Agent")
+	}
+	err = m.store.put(ctx, m.key(token), session)
 	if err != nil {
 		return token, err
 	}
@@ -109,29 +116,29 @@ func (m *Manager) key(token Token) string {
 	}, ":")
 }
 
-// Store abstracts the storage of session data.
+// store abstracts the storage of session data.
 // Currently implemented with an in-memory cache and a Redis store.
-type Store interface {
-	Put(ctx context.Context, key string, session Session) error
-	Get(ctx context.Context, key string) (Session, error)
+type store interface {
+	put(ctx context.Context, key string, session Session) error
+	get(ctx context.Context, key string) (Session, error)
 	Len(ctx context.Context) (int, error)
 }
 
 var (
-	_ Store = (*InMemoryStore)(nil)
-	_ Store = (*RedisStore)(nil)
+	_ store = (*InMemoryStore)(nil)
+	_ store = (*RedisStore)(nil)
 )
 
 type InMemoryStore struct {
 	Cache *cache.Cache[string, Session]
 }
 
-func (s InMemoryStore) Put(_ context.Context, key string, session Session) error {
+func (s InMemoryStore) put(_ context.Context, key string, session Session) error {
 	s.Cache.Add(key, session)
 	return nil
 }
 
-func (s InMemoryStore) Get(_ context.Context, key string) (Session, error) {
+func (s InMemoryStore) get(_ context.Context, key string) (Session, error) {
 	if session, ok := s.Cache.Get(key); ok {
 		return session, nil
 	}
@@ -147,7 +154,7 @@ type RedisStore struct {
 	TTL    time.Duration
 }
 
-func (s RedisStore) Put(ctx context.Context, key string, session Session) error {
+func (s RedisStore) put(ctx context.Context, key string, session Session) error {
 	rawSession, err := json.Marshal(session)
 	if err != nil {
 		return fmt.Errorf("json: %w", err)
@@ -156,7 +163,7 @@ func (s RedisStore) Put(ctx context.Context, key string, session Session) error 
 
 }
 
-func (s RedisStore) Get(ctx context.Context, key string) (Session, error) {
+func (s RedisStore) get(ctx context.Context, key string) (Session, error) {
 	rawSession, err := s.Client.Get(ctx, key).Result()
 	if errors.Is(err, redis.Nil) {
 		return Session{}, ErrSessionNotFound
@@ -176,22 +183,4 @@ func (s RedisStore) Len(ctx context.Context) (int, error) {
 		found++
 	}
 	return found, i.Err()
-}
-
-var _ prometheus.Collector = &InstrumentedSessionManager{}
-
-type InstrumentedSessionManager struct {
-	SessionMgr *Manager
-	Desc       *prometheus.Desc
-}
-
-func (m InstrumentedSessionManager) Describe(descs chan<- *prometheus.Desc) {
-	descs <- m.Desc
-}
-
-func (m InstrumentedSessionManager) Collect(metrics chan<- prometheus.Metric) {
-	count, err := m.SessionMgr.Store.Len(context.Background())
-	if err == nil {
-		metrics <- prometheus.MustNewConstMetric(m.Desc, prometheus.GaugeValue, float64(count))
-	}
 }

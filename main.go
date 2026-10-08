@@ -12,11 +12,10 @@ import (
 
 	"codeberg.org/clambin/go-common/httputils"
 	"github.com/clambin/forward-auth/internal/authn"
-	"github.com/clambin/forward-auth/internal/authn/cache"
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/clambin/forward-auth/internal/configuration"
+	"github.com/clambin/forward-auth/internal/observability"
 	"github.com/clambin/forward-auth/internal/server"
-	"github.com/clambin/forward-auth/internal/server/middleware"
 	"github.com/clambin/forward-auth/internal/session"
 	"github.com/goccy/go-yaml"
 	"github.com/prometheus/client_golang/prometheus"
@@ -71,11 +70,11 @@ func main() {
 
 	logger.Info("starting forward-auth", "version", version)
 
-	metrics := middleware.GetMetrics()
+	metrics := observability.GetMetrics()
 	prometheus.MustRegister(
 		metrics,
-		&session.InstrumentedSessionManager{
-			SessionMgr: sessionMgr,
+		observability.InstrumentedStore{
+			Store: sessionMgr,
 			Desc: prometheus.NewDesc(
 				"forward_auth_session_count",
 				"Number of active sessions",
@@ -83,8 +82,8 @@ func main() {
 				nil,
 			),
 		},
-		cache.InstrumentedCache[*authn.Authenticator]{
-			Cache: authenticator,
+		observability.InstrumentedStore{
+			Store: authenticator,
 			Desc: prometheus.NewDesc(
 				"forward_auth_state_count",
 				"Number of active states",

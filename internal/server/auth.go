@@ -58,7 +58,7 @@ func handleForwardAuth(
 		// get the jwt token
 		cookie, err := r.Cookie(cookieName)
 		if err != nil {
-			reqLogger.Error("failed to retrieve cookie", slog.Any("err", err))
+			reqLogger.Debug("no token in cookie")
 			redirectToLogin(originalURL)
 			return
 		}
