@@ -64,7 +64,12 @@ func TestManager(t *testing.T) {
 			sessions, err := mgr.List(ctx, "foo@example.com")
 			require.NoError(t, err)
 			require.Len(t, sessions, 1)
+			assert.NotEmpty(t, sessions[0].ID)
 			assert.Equal(t, "foo@example.com", sessions[0].Identity.Email)
+			assert.Equal(t, "test", sessions[0].UserAgent)
+			assert.NotZero(t, sessions[0].IssuedAt)
+			assert.NotZero(t, sessions[0].LastSeen)
+			assert.NotZero(t, sessions[0].RefreshTokenHash)
 
 			// invalidate the token
 			token.RefreshToken = generateRefreshToken()

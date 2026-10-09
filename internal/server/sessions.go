@@ -23,9 +23,9 @@ func handleSessions(
 
 type listSessionsResponseItem struct {
 	SessionID string            `json:"id"`
-	Identity  provider.Identity `json:"identity"`
-	LastSeen  time.Time         `json:"lastSeen"`
-	UserAgent string            `json:"userAgent"`
+	Identity  provider.Identity `json:"user_info"`
+	LastSeen  time.Time         `json:"last_seen"`
+	UserAgent string            `json:"user_agent"`
 }
 
 func handleListSessions(

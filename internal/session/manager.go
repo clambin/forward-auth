@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"uuid"
 
 	"codeberg.org/clambin/go-common/cache"
 	"github.com/clambin/forward-auth/internal/authn/provider"
@@ -71,7 +72,7 @@ func (m *Manager) CreateSession(ctx context.Context, id provider.Identity, r *ht
 	}
 	now := time.Now()
 	session := Session{
-		ID:               token.ID,
+		ID:               uuid.New().String(),
 		Identity:         id,
 		RefreshTokenHash: token.RefreshToken.hash(),
 		IssuedAt:         now,
