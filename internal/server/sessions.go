@@ -68,8 +68,8 @@ func handleDeleteSession(
 		username := r.Header.Get(forwardedUserEmailHeader)
 		// if session id is missing, the http router will not match to this route and sends a 404 directly.
 		id := r.PathValue("id")
-		logger.Debug("deleting session", "username", username, "id", id)
 		err := sessionManager.Delete(r.Context(), username, id)
+		logger.Debug("deleting session", "username", username, "id", id, "err", err)
 		if err != nil {
 			if errors.Is(err, session.ErrSessionNotFound) {
 				http.Error(w, "session not found", http.StatusNotFound)
