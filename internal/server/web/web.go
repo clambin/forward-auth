@@ -16,13 +16,11 @@ func New() http.Handler {
 	}
 	h := http.FileServer(http.FS(sub))
 
-	/*
-		// this prevents cloudflare from caching the static files while we're in active development.
-		h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Cache-Control", "no-store")
-			h.ServeHTTP(w, r)
-		})
-	*/
+	// this prevents cloudflare from caching the static files while we're in active development.
+	h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		h.ServeHTTP(w, r)
+	})
 
 	return h
 }
