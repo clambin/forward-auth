@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -16,9 +17,9 @@ func handleSessions(
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /list", handleListSessions(sessionManager, logger.With("handler", "listSessions")))
-	mux.Handle("DELETE /session/{id}", handleDeleteSession(sessionManager))
+	mux.Handle("DELETE /session/{id}", handleDeleteSession(sessionManager, logger.With("handler", "deleteSession")))
 
-	return mux
+	return ensureUserEmailHeader(mux)
 }
 
 type listSessionsResponseItem struct {
@@ -34,12 +35,7 @@ func handleListSessions(
 
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		username := r.Header.Get(forwardedUserEmailHeader)
-		if username == "" {
-			http.Error(w, "missing X-Forwarded-User header", http.StatusBadRequest)
-			return
-		}
-		sessions, err := sessionManager.List(r.Context(), username)
+		sessions, err := sessionManager.List(r.Context(), r.Header.Get(forwardedUserEmailHeader))
 		if err != nil {
 			logger.Error("failed to list sessions", "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -63,9 +59,35 @@ func handleListSessions(
 	})
 }
 
-func handleDeleteSession(_ *session.Manager) http.Handler {
+func handleDeleteSession(
+	sessionManager *session.Manager,
+	logger *slog.Logger,
+) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		//r.PathValue("id")
-		//w.Write([]byte("delete session"))
+		// ensureUserEmailHeader ensures that the forwardedUserEmailHeader is present in the request header.
+		username := r.Header.Get(forwardedUserEmailHeader)
+		// if session id is missing, the http router will not match to this route and sends a 404 directly.
+		id := r.PathValue("id")
+		err := sessionManager.Delete(r.Context(), username, id)
+		if err != nil {
+			if errors.Is(err, session.ErrSessionNotFound) {
+				http.Error(w, "session not found", http.StatusNotFound)
+				return
+			}
+			logger.Error("failed to delete session", "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+func ensureUserEmailHeader(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if username := r.Header.Get(forwardedUserEmailHeader); username == "" {
+			http.Error(w, "missing X-Forwarded-User header", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }

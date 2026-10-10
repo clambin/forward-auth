@@ -79,7 +79,7 @@ func (m *Manager) CreateSession(ctx context.Context, id provider.Identity, r *ht
 		LastSeen:         now,
 		UserAgent:        userAgent,
 	}
-	if err := m.put(ctx, m.key(token), session); err != nil {
+	if err := m.put(ctx, m.keyFromToken(token), session); err != nil {
 		return token, err
 	}
 	return token, nil
@@ -89,7 +89,7 @@ func (m *Manager) CreateSession(ctx context.Context, id provider.Identity, r *ht
 // the user agent and the last refresh time in the store. It returns the updated token.
 func (m *Manager) Validate(ctx context.Context, token Token, r *http.Request) (Token, error) {
 	// if the session doesn't exist, it's an error
-	session, err := m.get(ctx, m.key(token))
+	session, err := m.get(ctx, m.keyFromToken(token))
 	if err != nil {
 		return token, err
 	}
@@ -104,7 +104,7 @@ func (m *Manager) Validate(ctx context.Context, token Token, r *http.Request) (T
 	if r != nil {
 		session.UserAgent = r.Header.Get("User-Agent")
 	}
-	err = m.put(ctx, m.key(token), session)
+	err = m.put(ctx, m.keyFromToken(token), session)
 	if err != nil {
 		return token, err
 	}
@@ -114,13 +114,21 @@ func (m *Manager) Validate(ctx context.Context, token Token, r *http.Request) (T
 	return token, nil
 }
 
-func (m *Manager) key(token Token) string {
+func (m *Manager) keyFromToken(token Token) string {
+	return m.key(token.Identity.Email, token.SessionID)
+}
+
+func (m *Manager) key(email string, sessionID string) string {
 	return strings.Join([]string{
 		namespaceKeyPrefix,
 		subsystemKeyPrefix,
-		token.Identity.Email,
-		token.SessionID,
+		email,
+		sessionID,
 	}, ":")
+}
+
+func (m *Manager) Delete(ctx context.Context, username string, id string) error {
+	return m.del(ctx, m.key(username, id))
 }
 
 // store abstracts the storage of session data.
@@ -128,6 +136,7 @@ func (m *Manager) key(token Token) string {
 type store interface {
 	put(ctx context.Context, key string, session Session) error
 	get(ctx context.Context, key string) (Session, error)
+	del(ctx context.Context, key string) error
 	Len(ctx context.Context) (int, error)
 	List(ctx context.Context, email string) ([]Session, error)
 }
@@ -151,6 +160,14 @@ func (s InMemoryStore) get(_ context.Context, key string) (Session, error) {
 		return session, nil
 	}
 	return Session{}, ErrSessionNotFound
+}
+
+func (s InMemoryStore) del(_ context.Context, key string) error {
+	if _, ok := s.Cache.Get(key); !ok {
+		return ErrSessionNotFound
+	}
+	s.Cache.Remove(key)
+	return nil
 }
 
 func (s InMemoryStore) List(_ context.Context, email string) ([]Session, error) {
@@ -192,6 +209,14 @@ func (s RedisStore) get(ctx context.Context, key string) (Session, error) {
 		return Session{}, fmt.Errorf("json: %w", err)
 	}
 	return session, nil
+}
+
+func (s RedisStore) del(_ context.Context, key string) error {
+	err := s.Client.Del(context.Background(), key).Err()
+	if errors.Is(err, redis.Nil) {
+		return ErrSessionNotFound
+	}
+	return err
 }
 
 func (s RedisStore) List(ctx context.Context, email string) ([]Session, error) {
