@@ -62,9 +62,11 @@ func New(ttl time.Duration, cfg configuration.StorageConfiguration) (*Manager, e
 }
 
 // CreateSession creates a new session and returns a JWT token to be sent back to the client.
-func (m *Manager) CreateSession(ctx context.Context, id provider.Identity, r *http.Request) (Token, error) {
-	// create the session token, to be sent back to the client
-	token := generateToken(id)
+func (m *Manager) CreateSession(ctx context.Context, identity provider.Identity, r *http.Request) (Token, error) {
+	// allocate a session ID
+	sessionID := uuid.New().String()
+	// create the session token that will be sent back to the client
+	token := generateToken(sessionID, identity)
 	// store a session in the data store
 	var userAgent string
 	if r != nil {
@@ -72,8 +74,8 @@ func (m *Manager) CreateSession(ctx context.Context, id provider.Identity, r *ht
 	}
 	now := time.Now()
 	session := Session{
-		ID:               uuid.New().String(),
-		Identity:         id,
+		ID:               sessionID,
+		Identity:         identity,
 		RefreshTokenHash: token.RefreshToken.hash(),
 		IssuedAt:         now,
 		LastSeen:         now,
@@ -212,8 +214,8 @@ func (s RedisStore) get(ctx context.Context, key string) (Session, error) {
 }
 
 func (s RedisStore) del(_ context.Context, key string) error {
-	err := s.Client.Del(context.Background(), key).Err()
-	if errors.Is(err, redis.Nil) {
+	value, err := s.Client.Del(context.Background(), key).Result()
+	if errors.Is(err, redis.Nil) || value == 0 {
 		return ErrSessionNotFound
 	}
 	return err

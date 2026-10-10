@@ -38,11 +38,11 @@ func TestManager(t *testing.T) {
 			require.NoError(t, err)
 
 			// create a session
-			id := provider.Identity{Email: "foo@example.com", Name: "foo", Subject: "1234"}
-			token, err := mgr.CreateSession(ctx, id, req)
+			identity := provider.Identity{Email: "foo@example.com", Name: "foo", Subject: "1234"}
+			token, err := mgr.CreateSession(ctx, identity, req)
 			require.NoError(t, err)
 
-			assert.Equal(t, id, token.Identity)
+			assert.Equal(t, identity, token.Identity)
 			assert.False(t, token.Expired())
 
 			// expire the token
@@ -64,18 +64,32 @@ func TestManager(t *testing.T) {
 			sessions, err := mgr.List(ctx, "foo@example.com")
 			require.NoError(t, err)
 			require.Len(t, sessions, 1)
-			assert.NotEmpty(t, sessions[0].ID)
+			// token is linked to the right session
+			assert.Equal(t, token.SessionID, sessions[0].ID)
+			// token is for the right user
 			assert.Equal(t, "foo@example.com", sessions[0].Identity.Email)
+			// session refresh token hash matches the token's refresh token
+			assert.Equal(t, token.RefreshToken.hash(), sessions[0].RefreshTokenHash)
+			// session captures the right user agent
 			assert.Equal(t, "test", sessions[0].UserAgent)
+			// timestamps are filled in
 			assert.NotZero(t, sessions[0].IssuedAt)
 			assert.NotZero(t, sessions[0].LastSeen)
-			assert.NotZero(t, sessions[0].RefreshTokenHash)
 
 			// invalidate the token
 			token.RefreshToken = generateRefreshToken()
 			_, err = mgr.Validate(ctx, token, req)
 			require.ErrorIs(t, err, ErrInvalidRefreshToken)
 
+			// delete the session
+			err = mgr.Delete(ctx, token.Identity.Email, token.SessionID)
+			require.NoError(t, err)
+			count, _ := mgr.Len(t.Context())
+			assert.Zero(t, count)
+
+			// delete a non-existent session returns an error
+			err = mgr.Delete(ctx, token.Identity.Email, token.SessionID)
+			require.ErrorIs(t, err, ErrSessionNotFound)
 		})
 	}
 }

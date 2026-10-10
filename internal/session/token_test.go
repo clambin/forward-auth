@@ -13,7 +13,7 @@ import (
 func TestToken(t *testing.T) {
 	const secret = "secret"
 	// generate a token
-	token := generateToken(provider.Identity{Email: "test@example.com"})
+	token := generateToken("my-session-id", provider.Identity{Email: "test@example.com"})
 
 	// produce signed JWT token
 	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, token)

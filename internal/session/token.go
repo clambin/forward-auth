@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
-	"uuid"
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/golang-jwt/jwt/v5"
@@ -76,14 +75,14 @@ type Token struct {
 	RefreshToken RefreshToken      `json:"refreshToken"` // TODO: as RefreshToken?
 }
 
-func generateToken(id provider.Identity) Token {
+func generateToken(sessionID string, identity provider.Identity) Token {
 	return Token{
 		Issuer:       tokenIssuer,
 		IssuedAt:     &jwt.NumericDate{Time: time.Now()},
 		ExpiresAt:    &jwt.NumericDate{Time: time.Now().Add(tokenExpiration)},
-		SessionID:    uuid.New().String(),
+		SessionID:    sessionID,
 		RefreshToken: generateRefreshToken(),
-		Identity:     id,
+		Identity:     identity,
 	}
 }
 
