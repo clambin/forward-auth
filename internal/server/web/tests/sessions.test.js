@@ -22,8 +22,8 @@ beforeEach(() => {
 
 test('loadSessions renders correctly', async () => {
     const sessions = {
-        "id1": { user_info: { email: "user1@example.com" }, last_seen: "2024-01-01" },
-        "id2": { user_info: { email: "user2@example.com" }, last_seen: "2024-01-02" }
+        "idx": { id: "id1", user_info: { email: "user1@example.com" }, last_seen: "2024-01-01" },
+        "idy": { id: "id2", user_info: { email: "user2@example.com" }, last_seen: "2024-01-02" }
     };
     
     global.fetch.mockResolvedValueOnce({
@@ -45,9 +45,9 @@ test('loadSessions renders correctly', async () => {
 
 test('loadSessions renders sessions in descending order of last_seen', async () => {
     const sessions = {
-        "id1": { user_info: { email: "user1@example.com" }, last_seen: "2024-01-01T12:00:00Z" },
-        "id2": { user_info: { email: "user2@example.com" }, last_seen: "2024-01-02T12:00:00Z" },
-        "id3": { user_info: { email: "user3@example.com" }, last_seen: "2024-01-01T15:00:00Z" }
+        "idx": { id: "id1", user_info: { email: "user1@example.com" }, last_seen: "2024-01-01T12:00:00Z" },
+        "idy": { id: "id2", user_info: { email: "user2@example.com" }, last_seen: "2024-01-02T12:00:00Z" },
+        "idz": { id: "id3", user_info: { email: "user3@example.com" }, last_seen: "2024-01-01T15:00:00Z" }
     };
     
     global.fetch.mockResolvedValueOnce({
