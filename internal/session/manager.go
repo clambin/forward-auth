@@ -14,6 +14,7 @@ import (
 	"codeberg.org/clambin/go-common/cache"
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/configuration"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -113,7 +114,7 @@ func (m *Manager) Validate(ctx context.Context, token Token, r *http.Request) (T
 	}
 
 	// refresh the token
-	token.ExpiresAt.Time = time.Now().Add(tokenExpiration)
+	token.ExpiresAt = jwt.NewNumericDate(time.Now().Add(tokenExpiration))
 	return token, nil
 }
 
@@ -121,8 +122,8 @@ func (m *Manager) Delete(ctx context.Context, username string, id string) error 
 	return m.del(ctx, username, id)
 }
 
-// store abstracts the storage of session data.
-// Currently implemented with an in-memory cache and a Redis store.
+// A store abstracts the storage of session data.
+// Currently implemented with an in-memory cache and Redis.
 type store interface {
 	put(ctx context.Context, email string, sessionID string, session Session) error
 	get(ctx context.Context, email string, sessionID string) (Session, error)
@@ -222,8 +223,8 @@ func (s RedisStore) List(ctx context.Context, email string) ([]Session, error) {
 		Scan(ctx, 0, match, 100).
 		Iterator()
 	for i.Next(ctx) {
-		key := i.Val()
-		cmds[key] = pipe.Get(ctx, key)
+		k := i.Val()
+		cmds[k] = pipe.Get(ctx, k)
 	}
 	if i.Err() != nil {
 		return nil, fmt.Errorf("redis: %w", i.Err())
@@ -263,7 +264,7 @@ func key(email string, sessionID string) string {
 	return strings.Join([]string{
 		namespaceKeyPrefix,
 		subsystemKeyPrefix,
-		base64.StdEncoding.EncodeToString([]byte(email)), // base64 the email address, in case it contains cache glob characters, or colons
+		base64.StdEncoding.EncodeToString([]byte(email)), // base64 the email address, in case it contains cache glob characters or colons
 		sessionID, // uuid generated at the server. no need to base64 encode it
 	}, ":")
 }

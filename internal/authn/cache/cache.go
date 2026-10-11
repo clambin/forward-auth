@@ -94,31 +94,25 @@ type redisCache[T any] struct {
 
 func (c *redisCache[T]) Set(ctx context.Context, id string, val T) error {
 	body, err := json.Marshal(val)
-	if err != nil {
-		return err
+	if err == nil {
+		err = c.client.Set(ctx, c.prefixedID(id), string(body), c.ttl).Err()
 	}
-	return c.client.Set(ctx, c.prefixedID(id), string(body), c.ttl).Err()
+	return err
 }
 
 func (c *redisCache[T]) GetAndDelete(ctx context.Context, id string) (T, error) {
 	var v T
 	value, err := c.client.GetDel(ctx, c.prefixedID(id)).Result()
-	if errors.Is(err, redis.Nil) {
-		return v, ErrNotFound
-	}
 	if err != nil {
-		return v, fmt.Errorf("redis getdel: %w", err)
+		if errors.Is(err, redis.Nil) {
+			return v, ErrNotFound
+		}
+		return v, fmt.Errorf("redis: %w", err)
 	}
-	err = json.Unmarshal([]byte(value), &v)
+	if err = json.Unmarshal([]byte(value), &v); err != nil {
+		return v, fmt.Errorf("json: %w", err)
+	}
 	return v, err
-}
-
-func (c *redisCache[T]) Delete(ctx context.Context, id string) error {
-	err := c.client.Del(ctx, c.prefixedID(id)).Err()
-	if errors.Is(err, redis.Nil) {
-		err = nil
-	}
-	return err
 }
 
 func (c *redisCache[T]) Len(ctx context.Context) (int, error) {
@@ -134,8 +128,5 @@ func (c *redisCache[T]) Len(ctx context.Context) (int, error) {
 }
 
 func (c *redisCache[T]) prefixedID(id string) string {
-	if c.prefix == "" {
-		return id
-	}
 	return c.prefix + id
 }

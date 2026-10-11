@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/golang-jwt/jwt/v5"
@@ -33,6 +34,49 @@ func TestToken(t *testing.T) {
 	assert.Equal(t, token.RefreshToken, token2.RefreshToken)
 	assert.Equal(t, token.ExpiresAt.Unix(), token2.ExpiresAt.Unix())
 	assert.False(t, token2.Expired())
+}
+
+func TestParseToken(t *testing.T) {
+	var signingKey = []byte("secret")
+	makeToken := func(expiration time.Duration) string {
+		tok := generateToken(uuid.New().String(), provider.Identity{Email: "test@example.com"})
+		tok.ExpiresAt = jwt.NewNumericDate(time.Now().Add(expiration))
+		raw, err := tok.Sign(signingKey)
+		require.NoError(t, err)
+		return raw
+	}
+	fakeToken := func(claims jwt.MapClaims) string {
+		tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		raw, err := tok.SignedString(signingKey)
+		require.NoError(t, err)
+		return raw
+	}
+
+	tests := []struct {
+		name        string
+		input       string
+		secret      []byte
+		wantErr     require.ErrorAssertionFunc
+		wantExpired assert.BoolAssertionFunc
+	}{
+		{"valid token", makeToken(15 * time.Minute), signingKey, require.NoError, assert.False},
+		{"invalid signature", makeToken(14 * time.Minute), []byte("bad-key"), require.Error, assert.False},
+		{"expired token", makeToken(-15 * time.Minute), signingKey, require.NoError, assert.True},
+		{"invalid token", "this-is-not-a-token", signingKey, require.Error, assert.False},
+		{"empty token", fakeToken(nil), signingKey, require.Error, assert.False},
+		{"fake token", fakeToken(jwt.MapClaims{"iss": tokenIssuer}), signingKey, require.Error, assert.False},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			token, err := ParseToken(tt.input, tt.secret)
+			tt.wantErr(t, err)
+			if err != nil {
+				return
+			}
+			tt.wantExpired(t, token.Expired())
+		})
+	}
 }
 
 func TestRefreshTokenHash_JSON(t *testing.T) {

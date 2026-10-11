@@ -78,8 +78,8 @@ type Token struct {
 func generateToken(sessionID string, identity provider.Identity) Token {
 	return Token{
 		Issuer:       tokenIssuer,
-		IssuedAt:     &jwt.NumericDate{Time: time.Now()},
-		ExpiresAt:    &jwt.NumericDate{Time: time.Now().Add(tokenExpiration)},
+		IssuedAt:     jwt.NewNumericDate(time.Now()),
+		ExpiresAt:    jwt.NewNumericDate(time.Now().Add(tokenExpiration)),
 		SessionID:    sessionID,
 		RefreshToken: generateRefreshToken(),
 		Identity:     identity,
@@ -97,9 +97,6 @@ func ParseToken(rawToken string, signingKey []byte) (Token, error) {
 	)
 	if err != nil {
 		return Token{}, fmt.Errorf("jwt: %w", err)
-	}
-	if jwtToken == nil || jwtToken.Claims == nil {
-		return Token{}, fmt.Errorf("jwt token is nil or has no valid claims")
 	}
 	token := *jwtToken.Claims.(*Token)
 

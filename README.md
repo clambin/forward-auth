@@ -185,10 +185,10 @@ server:
   # Domain for which the cookie is valid. 
   # All protected hostnames (including auth) need to be subdomains of this domain.
   domain: .example.com
-  # Key to sign and verify the JWT cookie
-  # Must be at least 32 characters long
-  # Use an environment variable (e.g., ${JWT_KEY}) to keep the secret out of the configuration file
-  key: "<jwt-signing-key>"
+  # Key to sign and verify the JWT.
+  # Must be at least 32 characters long.
+  # Use environment variables to keep these credentials out of the configuration file.
+  key: "${JWT_KEY}"
 logger:
   # Logging level. Default: "info".
   level: info
@@ -218,12 +218,12 @@ authn:
     # OIDC-related configuration.
     oidc:
       # OIDC client ID.
-      # # Use an environment variable (e.g., ${OIDC_CLIENT_ID}) to keep the secret out of the configuration file
-      client_id: "<client-id>"
+      # Use environment variables to keep these credentials out of the configuration file.
+      client_id: "${OIDC_CLIENT_ID}"
       # OIDC client secret.
-      # # Use an environment variable (e.g., ${OIDC_CLIENT_SECRET}) to keep the secret out of the configuration file
-      client_secret: "<client-secret>"
-      # OIDC issuer URL. Only required for type oidc.
+      # Use environment variables to keep these credentials out of the configuration file.
+      client_secret: "${OIDC_CLIENT_SECRET}"
+      # OIDC issuer URL.
       issuer_url: https://accounts.google.com
       # scopes to request from the OIDC provider. 
       # only override this if you know what you're doing.
@@ -231,11 +231,11 @@ authn:
     # GitHub-related configuration. Only required for type github.
     github:
       # Oauth2 client ID.
-      # # Use an environment variable (e.g., ${OIDC_CLIENT_ID}) to keep the secret out of the configuration file
-      client_id: "<client-id>"
+      # Use environment variables to keep these credentials out of the configuration file.
+      client_id: "${GITHUB_CLIENT_ID}"
       # Oauth2 client secret.
-      # # Use an environment variable (e.g., ${OIDC_CLIENT_SECRET}) to keep the secret out of the configuration file
-      client_secret: "<client-secret>"
+      # Use environment variables to keep these credentials out of the configuration file.
+      client_secret: "${GITHUB_CLIENT_SECRET}"
       # scopes to request from github. 
       # only override this if you know what you're doing.
       scopes: [ user:email, read:user ]
@@ -262,8 +262,8 @@ storage:
   # Use environment variables to keep these credentials out of the configuration file.
   redis:
     addr: redis:6379
-    username: "redis-username"
-    password: "redis-password"
+    username: "${REDIS_USERNAME}"
+    password: "${REDIS_PASSWORD}"
     db: 0
 
 session:
@@ -430,6 +430,9 @@ This is useful for:
 - Security (invalidate compromised sessions)
 - Administration (force logout)
 
+Note: deleting a session currently does not invalidate the issued JWT.  
+In practice, this means the session remains active until the JWT expires (up to 15 minutes).
+
 ---
 
 ### Logging Out
@@ -456,8 +459,8 @@ curl -X DELETE \
 ### What Happens After Deletion?
 
 - Session is removed from storage (local or Redis)
-- Cookie may still exist in the browser
-- Next request:
+- Cookie may still exist in the browser and the JWT remains valid until it expires (up to 15 minutes).
+- Once the JWT expires:
   - Session lookup fails
   - User is redirected to the identity provider to log in again
 
