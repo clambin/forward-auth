@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -81,7 +82,7 @@ func (m *Manager) CreateSession(ctx context.Context, identity provider.Identity,
 		LastSeen:         now,
 		UserAgent:        userAgent,
 	}
-	if err := m.put(ctx, m.keyFromToken(token), session); err != nil {
+	if err := m.put(ctx, token.Identity.Email, sessionID, session); err != nil {
 		return token, err
 	}
 	return token, nil
@@ -91,7 +92,7 @@ func (m *Manager) CreateSession(ctx context.Context, identity provider.Identity,
 // the user agent and the last refresh time in the store. It returns the updated token.
 func (m *Manager) Validate(ctx context.Context, token Token, r *http.Request) (Token, error) {
 	// if the session doesn't exist, it's an error
-	session, err := m.get(ctx, m.keyFromToken(token))
+	session, err := m.get(ctx, token.Identity.Email, token.SessionID)
 	if err != nil {
 		return token, err
 	}
@@ -106,7 +107,7 @@ func (m *Manager) Validate(ctx context.Context, token Token, r *http.Request) (T
 	if r != nil {
 		session.UserAgent = r.Header.Get("User-Agent")
 	}
-	err = m.put(ctx, m.keyFromToken(token), session)
+	err = m.put(ctx, token.Identity.Email, token.SessionID, session)
 	if err != nil {
 		return token, err
 	}
@@ -116,29 +117,16 @@ func (m *Manager) Validate(ctx context.Context, token Token, r *http.Request) (T
 	return token, nil
 }
 
-func (m *Manager) keyFromToken(token Token) string {
-	return m.key(token.Identity.Email, token.SessionID)
-}
-
-func (m *Manager) key(email string, sessionID string) string {
-	return strings.Join([]string{
-		namespaceKeyPrefix,
-		subsystemKeyPrefix,
-		email,
-		sessionID,
-	}, ":")
-}
-
 func (m *Manager) Delete(ctx context.Context, username string, id string) error {
-	return m.del(ctx, m.key(username, id))
+	return m.del(ctx, username, id)
 }
 
 // store abstracts the storage of session data.
 // Currently implemented with an in-memory cache and a Redis store.
 type store interface {
-	put(ctx context.Context, key string, session Session) error
-	get(ctx context.Context, key string) (Session, error)
-	del(ctx context.Context, key string) error
+	put(ctx context.Context, email string, sessionID string, session Session) error
+	get(ctx context.Context, email string, sessionID string) (Session, error)
+	del(ctx context.Context, email string, sessionID string) error
 	Len(ctx context.Context) (int, error)
 	List(ctx context.Context, email string) ([]Session, error)
 }
@@ -152,30 +140,32 @@ type InMemoryStore struct {
 	Cache *cache.Cache[string, Session]
 }
 
-func (s InMemoryStore) put(_ context.Context, key string, session Session) error {
-	s.Cache.Add(key, session)
+func (s InMemoryStore) put(_ context.Context, email string, sessionID string, session Session) error {
+	s.Cache.Add(key(email, sessionID), session)
 	return nil
 }
 
-func (s InMemoryStore) get(_ context.Context, key string) (Session, error) {
-	if session, ok := s.Cache.Get(key); ok {
+func (s InMemoryStore) get(_ context.Context, email string, sessionID string) (Session, error) {
+	if session, ok := s.Cache.Get(key(email, sessionID)); ok {
 		return session, nil
 	}
 	return Session{}, ErrSessionNotFound
 }
 
-func (s InMemoryStore) del(_ context.Context, key string) error {
-	if _, ok := s.Cache.Get(key); !ok {
+func (s InMemoryStore) del(_ context.Context, email string, sessionID string) error {
+	k := key(email, sessionID)
+	if _, ok := s.Cache.Get(k); !ok {
 		return ErrSessionNotFound
 	}
-	s.Cache.Remove(key)
+	s.Cache.Remove(k)
 	return nil
 }
 
 func (s InMemoryStore) List(_ context.Context, email string) ([]Session, error) {
+	match := emailScanKey(email, "")
 	sessions := make([]Session, 0, s.Cache.Len())
 	for k, v := range s.Cache.Iterate() {
-		if strings.HasPrefix(k, namespaceKeyPrefix+":"+subsystemKeyPrefix+":"+email+":") {
+		if strings.HasPrefix(k, match) {
 			sessions = append(sessions, v)
 		}
 	}
@@ -191,17 +181,17 @@ type RedisStore struct {
 	TTL    time.Duration
 }
 
-func (s RedisStore) put(ctx context.Context, key string, session Session) error {
+func (s RedisStore) put(ctx context.Context, email string, sessionID string, session Session) error {
 	rawSession, err := json.Marshal(session)
 	if err != nil {
 		return fmt.Errorf("json: %w", err)
 	}
-	return s.Client.Set(ctx, key, rawSession, s.TTL).Err()
+	return s.Client.Set(ctx, key(email, sessionID), rawSession, s.TTL).Err()
 
 }
 
-func (s RedisStore) get(ctx context.Context, key string) (Session, error) {
-	rawSession, err := s.Client.Get(ctx, key).Result()
+func (s RedisStore) get(ctx context.Context, email string, sessionID string) (Session, error) {
+	rawSession, err := s.Client.Get(ctx, key(email, sessionID)).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			return Session{}, ErrSessionNotFound
@@ -216,8 +206,8 @@ func (s RedisStore) get(ctx context.Context, key string) (Session, error) {
 	return session, nil
 }
 
-func (s RedisStore) del(ctx context.Context, key string) error {
-	value, err := s.Client.Del(ctx, key).Result()
+func (s RedisStore) del(ctx context.Context, email string, sessionID string) error {
+	value, err := s.Client.Del(ctx, key(email, sessionID)).Result()
 	if errors.Is(err, redis.Nil) || value == 0 {
 		return ErrSessionNotFound
 	}
@@ -225,10 +215,11 @@ func (s RedisStore) del(ctx context.Context, key string) error {
 }
 
 func (s RedisStore) List(ctx context.Context, email string) ([]Session, error) {
+	match := emailScanKey(email, "*")
 	cmds := make(map[string]*redis.StringCmd)
 	pipe := s.Client.Pipeline()
 	i := s.Client.
-		Scan(ctx, 0, namespaceKeyPrefix+":"+subsystemKeyPrefix+":"+email+":*", 100).
+		Scan(ctx, 0, match, 100).
 		Iterator()
 	for i.Next(ctx) {
 		key := i.Val()
@@ -268,16 +259,20 @@ func (s RedisStore) Len(ctx context.Context) (int, error) {
 	return found, i.Err()
 }
 
-/*
-//TODO: escape the email address when using it in the store's key
-func escapeRedisMatch(value string) string {
-	var escaped strings.Builder
-	for _, r := range value {
-		if strings.ContainsRune(`\*?[`, r) {
-			escaped.WriteByte('\\')
-		}
-		escaped.WriteRune(r)
-	}
-	return escaped.String()
+func key(email string, sessionID string) string {
+	return strings.Join([]string{
+		namespaceKeyPrefix,
+		subsystemKeyPrefix,
+		base64.StdEncoding.EncodeToString([]byte(email)), // base64 the email address, in case it contains cache glob characters, or colons
+		sessionID, // uuid generated at the server. no need to base64 encode it
+	}, ":")
 }
-*/
+
+func emailScanKey(email string, glob string) string {
+	return strings.Join([]string{
+		namespaceKeyPrefix,
+		subsystemKeyPrefix,
+		base64.StdEncoding.EncodeToString([]byte(email)),
+		glob,
+	}, ":")
+}

@@ -2,8 +2,10 @@ package session
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/configuration"
@@ -97,4 +99,21 @@ func TestManager(t *testing.T) {
 func TestManager_InvalidStorage(t *testing.T) {
 	_, err := New(time.Hour, configuration.StorageConfiguration{Type: "invalid"})
 	require.Error(t, err)
+}
+
+func FuzzManager_key(f *testing.F) {
+	testCases := []string{"foo@example.com", "", "\"john:doe\"@example.com"}
+	for _, tc := range testCases {
+		f.Add(tc)
+	}
+	f.Fuzz(func(t *testing.T, email string) {
+		sessionID := uuid.New().String()
+		k := key(email, sessionID)
+		require.NotEmpty(t, k)
+		parts := strings.Split(k, ":")
+		require.Len(t, parts, 4)
+		assert.Equal(t, namespaceKeyPrefix, parts[0])
+		assert.Equal(t, subsystemKeyPrefix, parts[1])
+		assert.Equal(t, sessionID, parts[3])
+	})
 }
