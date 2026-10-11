@@ -93,3 +93,8 @@ func TestManager(t *testing.T) {
 		})
 	}
 }
+
+func TestManager_InvalidStorage(t *testing.T) {
+	_, err := New(time.Hour, configuration.StorageConfiguration{Type: "invalid"})
+	require.Error(t, err)
+}

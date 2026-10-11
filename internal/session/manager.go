@@ -176,7 +176,7 @@ func (s InMemoryStore) List(_ context.Context, email string) ([]Session, error) 
 	sessions := make([]Session, 0, s.Cache.Len())
 	for k, v := range s.Cache.Iterate() {
 		if strings.HasPrefix(k, namespaceKeyPrefix+":"+subsystemKeyPrefix+":"+email+":") {
-			return append(sessions, v), nil
+			sessions = append(sessions, v)
 		}
 	}
 	return sessions, nil
@@ -202,8 +202,11 @@ func (s RedisStore) put(ctx context.Context, key string, session Session) error 
 
 func (s RedisStore) get(ctx context.Context, key string) (Session, error) {
 	rawSession, err := s.Client.Get(ctx, key).Result()
-	if errors.Is(err, redis.Nil) {
-		return Session{}, ErrSessionNotFound
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return Session{}, ErrSessionNotFound
+		}
+		return Session{}, fmt.Errorf("redis: %w", err)
 	}
 	var session Session
 	err = json.Unmarshal([]byte(rawSession), &session)
@@ -213,8 +216,8 @@ func (s RedisStore) get(ctx context.Context, key string) (Session, error) {
 	return session, nil
 }
 
-func (s RedisStore) del(_ context.Context, key string) error {
-	value, err := s.Client.Del(context.Background(), key).Result()
+func (s RedisStore) del(ctx context.Context, key string) error {
+	value, err := s.Client.Del(ctx, key).Result()
 	if errors.Is(err, redis.Nil) || value == 0 {
 		return ErrSessionNotFound
 	}
@@ -224,7 +227,9 @@ func (s RedisStore) del(_ context.Context, key string) error {
 func (s RedisStore) List(ctx context.Context, email string) ([]Session, error) {
 	cmds := make(map[string]*redis.StringCmd)
 	pipe := s.Client.Pipeline()
-	i := s.Client.Scan(ctx, 0, namespaceKeyPrefix+":"+subsystemKeyPrefix+":"+email+":*", 100).Iterator()
+	i := s.Client.
+		Scan(ctx, 0, namespaceKeyPrefix+":"+subsystemKeyPrefix+":"+email+":*", 100).
+		Iterator()
 	for i.Next(ctx) {
 		key := i.Val()
 		cmds[key] = pipe.Get(ctx, key)
@@ -232,14 +237,18 @@ func (s RedisStore) List(ctx context.Context, email string) ([]Session, error) {
 	if i.Err() != nil {
 		return nil, fmt.Errorf("redis: %w", i.Err())
 	}
-	if _, err := pipe.Exec(ctx); err != nil {
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
 		return nil, fmt.Errorf("redis: %w", err)
 	}
 	sessions := make([]Session, 0, len(cmds))
 	for _, cmd := range cmds {
 		val, err := cmd.Result()
+		// expired between scan & get
 		if errors.Is(err, redis.Nil) {
 			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("redis: %w", err)
 		}
 		var session Session
 		if err = json.Unmarshal([]byte(val), &session); err != nil {
@@ -258,3 +267,17 @@ func (s RedisStore) Len(ctx context.Context) (int, error) {
 	}
 	return found, i.Err()
 }
+
+/*
+//TODO: escape the email address when using it in the store's key
+func escapeRedisMatch(value string) string {
+	var escaped strings.Builder
+	for _, r := range value {
+		if strings.ContainsRune(`\*?[`, r) {
+			escaped.WriteByte('\\')
+		}
+		escaped.WriteRune(r)
+	}
+	return escaped.String()
+}
+*/

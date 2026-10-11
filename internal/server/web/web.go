@@ -22,5 +22,4 @@ func New() http.Handler {
 		panic(err)
 	}
 	return h
-	//return anticache.NoCache(365 * 24 * time.Hour)(h)
 }

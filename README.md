@@ -187,7 +187,8 @@ server:
   domain: .example.com
   # Key to sign and verify the JWT cookie
   # Must be at least 32 characters long
-  key: "my-really-very-long-secret-signing-key"
+  # Use an environment variable (e.g., ${JWT_KEY}) to keep the secret out of the configuration file
+  key: "<jwt-signing-key>"
 logger:
   # Logging level. Default: "info".
   level: info
@@ -217,8 +218,10 @@ authn:
     # OIDC-related configuration.
     oidc:
       # OIDC client ID.
+      # # Use an environment variable (e.g., ${OIDC_CLIENT_ID}) to keep the secret out of the configuration file
       client_id: "<client-id>"
       # OIDC client secret.
+      # # Use an environment variable (e.g., ${OIDC_CLIENT_SECRET}) to keep the secret out of the configuration file
       client_secret: "<client-secret>"
       # OIDC issuer URL. Only required for type oidc.
       issuer_url: https://accounts.google.com
@@ -228,8 +231,10 @@ authn:
     # GitHub-related configuration. Only required for type github.
     github:
       # Oauth2 client ID.
+      # # Use an environment variable (e.g., ${OIDC_CLIENT_ID}) to keep the secret out of the configuration file
       client_id: "<client-id>"
       # Oauth2 client secret.
+      # # Use an environment variable (e.g., ${OIDC_CLIENT_SECRET}) to keep the secret out of the configuration file
       client_secret: "<client-secret>"
       # scopes to request from github. 
       # only override this if you know what you're doing.
@@ -254,6 +259,7 @@ storage:
   # Session and CSRF state storage type. local or redis. Default: "local".
   type: redis
   # Redis configuration.
+  # Use environment variables to keep these credentials out of the configuration file.
   redis:
     addr: redis:6379
     username: "redis-username"

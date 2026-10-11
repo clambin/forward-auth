@@ -35,6 +35,9 @@ func handleListSessions(
 
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Note: we rely on the forwarded user email header to identify the user
+		// ListSessions and DeleteSessions are only accessed after forward-auth has run
+		// (this is configured by the HTTPRoute, so we can trust the user email header)
 		sessions, err := sessionManager.List(r.Context(), r.Header.Get(forwardedUserEmailHeader))
 		if err != nil {
 			logger.Error("failed to list sessions", "err", err)
@@ -64,10 +67,13 @@ func handleDeleteSession(
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// ensureUserEmailHeader ensures that the forwardedUserEmailHeader is present in the request header.
+		// Note: we rely on the forwarded user email header to identify the user
+		// ListSessions and DeleteSessions are only accessed after forward-auth has run
+		// (this is configured by the HTTPRoute, so we can trust the user email header)
 		username := r.Header.Get(forwardedUserEmailHeader)
 		// if session id is missing, the http router will not match to this route and sends a 404 directly.
 		id := r.PathValue("id")
+		// Delete checks that the session is associated with the user
 		err := sessionManager.Delete(r.Context(), username, id)
 		logger.Debug("deleting session", "username", username, "id", id, "err", err)
 		if err != nil {

@@ -30,14 +30,14 @@ func TestHandleListSessions(t *testing.T) {
 	resp := httptest.NewRecorder()
 	h.ServeHTTP(resp, req)
 
-	assert.Equal(t, http.StatusOK, resp.Code)
-	assert.Equal(t, "application/json", resp.Header().Get("Content-Type"))
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, "application/json", resp.Header().Get("Content-Type"))
 
 	var sessions []listSessionsResponseItem
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&sessions))
 	require.Len(t, sessions, 1)
 	assert.Equal(t, "test@example.com", sessions[0].Identity.Email)
-	assert.NotZero(t, "test@example.com", sessions[0].SessionID)
+	assert.NotZero(t, sessions[0].SessionID)
 	assert.Equal(t, "test", sessions[0].UserAgent)
 }
 

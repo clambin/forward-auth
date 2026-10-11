@@ -40,7 +40,7 @@ type RedisClient interface {
 // New returns a new http.Handler that serves all API endpoints and the web frontend.
 func New(
 	cfg configuration.ServerConfiguration,
-	tokenManager *session.Manager,
+	sessionManager *session.Manager,
 	authenticator Authenticator,
 	authorizer Authorizer,
 	redisClient RedisClient,
@@ -55,7 +55,7 @@ func New(
 				cfg.CookieName,
 				[]byte(cfg.Key),
 				cfg.Domain,
-				tokenManager,
+				sessionManager,
 				authenticator,
 				authorizer,
 				logger.With(slog.String("handler", "forwardAuth")),
@@ -68,7 +68,7 @@ func New(
 				cfg.CookieName,
 				[]byte(cfg.Key),
 				cfg.Domain,
-				tokenManager,
+				sessionManager,
 				authenticator,
 				logger.With(slog.String("handler", "login")),
 			),
@@ -76,7 +76,7 @@ func New(
 	)
 
 	mux.Handle("/api/sessions/", http.StripPrefix("/api/sessions", handleSessions(
-		tokenManager,
+		sessionManager,
 		logger,
 	)))
 

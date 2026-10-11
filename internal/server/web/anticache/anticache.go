@@ -24,7 +24,7 @@ const (
 // Cloudflare cannot serve a stale asset, because a new build means new URLs. index.html, which hands out those URLs,
 // is the only document served with no-store, and so the only one that must reach the origin on every visit.
 //
-// index.html is a Go template: it references its assets as {{.AssetPrefix}}/js/... and is rendered once at startup.
+// index.html is a Go template: it references its assets as {{.AssetPath}}/js/... and is rendered once at startup.
 // References inside the js and css files are relative, so they resolve underneath the prefix on their own.
 //
 // To disable caching altogether rather than key it on content, replace fingerprintFS below with a random value
@@ -107,7 +107,7 @@ func fingerprintFS(fsys fs.FS) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil))[:16], nil
 }
 
-// renderIndexHTML renders indexHTML, which references its assets as {{.AssetPrefix}}/js/... , with the fingerprinted prefix.
+// renderIndexHTML renders indexHTML, which references its assets as {{.AssetPath}}/js/... , with the fingerprinted path.
 // It's rendered once, at startup: the prefix is fixed for the lifetime of the process.
 func renderIndexHTML(fsys fs.FS, indexHTML string, assetPath string) ([]byte, error) {
 	tmpl, err := template.ParseFS(fsys, indexHTML)

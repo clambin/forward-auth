@@ -43,7 +43,7 @@ func (t *RefreshToken) UnmarshalJSON(b []byte) error {
 }
 
 func (t RefreshToken) hash() refreshTokenHash {
-	return refreshTokenHash(sha256.New().Sum(t[:]))
+	return sha256.Sum256(t[:])
 }
 
 type refreshTokenHash [sha256.Size]byte
@@ -114,7 +114,7 @@ func ParseToken(rawToken string, signingKey []byte) (Token, error) {
 }
 
 func (t Token) Expired() bool {
-	return time.Now().After(t.ExpiresAt.Time)
+	return t.ExpiresAt == nil || time.Now().After(t.ExpiresAt.Time)
 }
 
 func (t Token) Sign(key []byte) (string, error) {
