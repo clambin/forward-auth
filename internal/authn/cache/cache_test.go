@@ -13,7 +13,7 @@ import (
 
 func TestCache(t *testing.T) {
 	ctx := t.Context()
-	c, err := tcredis.Run(ctx, "redis:latest")
+	c, err := tcredis.Run(ctx, "ghcr.io/valkey-io/valkey:latest")
 	require.NoError(t, err)
 	endpoint, err := c.Endpoint(ctx, "")
 	require.NoError(t, err)
@@ -63,7 +63,7 @@ func TestCache(t *testing.T) {
 
 func TestRedisCache_Len(t *testing.T) {
 	ctx := t.Context()
-	c, err := tcredis.Run(ctx, "redis:latest")
+	c, err := tcredis.Run(ctx, "ghcr.io/valkey-io/valkey:latest")
 	require.NoError(t, err)
 	endpoint, err := c.Endpoint(ctx, "")
 	require.NoError(t, err)

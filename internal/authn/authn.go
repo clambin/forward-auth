@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	stateKeyPrefix = "forward-auth-state"
+	stateKeyPrefix = "forward-auth:state"
 )
 
 // Authenticator authenticates users and manages user sessions.

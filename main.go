@@ -12,12 +12,11 @@ import (
 
 	"codeberg.org/clambin/go-common/httputils"
 	"github.com/clambin/forward-auth/internal/authn"
-	"github.com/clambin/forward-auth/internal/authn/cache"
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/clambin/forward-auth/internal/configuration"
+	"github.com/clambin/forward-auth/internal/observability"
 	"github.com/clambin/forward-auth/internal/server"
-	"github.com/clambin/forward-auth/internal/server/middleware"
-	"github.com/clambin/forward-auth/internal/token"
+	"github.com/clambin/forward-auth/internal/session"
 	"github.com/goccy/go-yaml"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
@@ -53,7 +52,7 @@ func main() {
 
 	authorizer := authz.Authorizer{Rules: cfg.Authz.Rules, Groups: cfg.Authz.Groups}
 
-	tokenMgr, err := token.NewTokenManager(cfg.Session.SessionTTL, cfg.Storage)
+	sessionMgr, err := session.New(cfg.Session.SessionTTL, cfg.Storage)
 	if err != nil {
 		logger.Error("failed to create token manager cache", "err", err)
 		os.Exit(1)
@@ -71,11 +70,11 @@ func main() {
 
 	logger.Info("starting forward-auth", "version", version)
 
-	metrics := middleware.GetMetrics()
+	metrics := observability.GetMetrics()
 	prometheus.MustRegister(
 		metrics,
-		&token.InstrumentedTokenManager{
-			TokenManager: tokenMgr,
+		observability.InstrumentedStore{
+			Store: sessionMgr,
 			Desc: prometheus.NewDesc(
 				"forward_auth_session_count",
 				"Number of active sessions",
@@ -83,8 +82,8 @@ func main() {
 				nil,
 			),
 		},
-		cache.InstrumentedCache[*authn.Authenticator]{
-			Cache: authenticator,
+		observability.InstrumentedStore{
+			Store: authenticator,
 			Desc: prometheus.NewDesc(
 				"forward_auth_state_count",
 				"Number of active states",
@@ -103,7 +102,7 @@ func main() {
 	g.Go(func() error {
 		return httputils.RunServer(ctx, &http.Server{
 			Addr:    cfg.Server.Addr,
-			Handler: server.New(cfg.Server, tokenMgr, authenticator, &authorizer, redisClient, metrics, logger),
+			Handler: server.New(cfg.Server, sessionMgr, authenticator, &authorizer, redisClient, metrics, logger),
 		})
 	})
 	if err = g.Wait(); err != nil {
