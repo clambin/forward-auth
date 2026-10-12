@@ -8,16 +8,16 @@ import (
 	"time"
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
-	"github.com/clambin/forward-auth/internal/session"
+	"github.com/clambin/forward-auth/internal/forwardauth"
 )
 
 func handleSessions(
-	sessionManager *session.Manager,
+	handler *forwardauth.Handler,
 	logger *slog.Logger,
 ) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("GET /list", handleListSessions(sessionManager, logger.With("handler", "listSessions")))
-	mux.Handle("DELETE /session/{id}", handleDeleteSession(sessionManager, logger.With("handler", "deleteSession")))
+	mux.Handle("GET /list", handleListSessions(handler, logger.With("handler", "listSessions")))
+	mux.Handle("DELETE /session/{id}", handleDeleteSession(handler, logger.With("handler", "deleteSession")))
 
 	return ensureUserEmailHeader(mux)
 }
@@ -30,15 +30,12 @@ type listSessionsResponseItem struct {
 }
 
 func handleListSessions(
-	sessionManager *session.Manager,
+	handler *forwardauth.Handler,
 	logger *slog.Logger,
 
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Note: we rely on the forwarded user email header to identify the user
-		// ListSessions and DeleteSessions are only accessed after forward-auth has run
-		// (this is configured by the HTTPRoute, so we can trust the user email header)
-		sessions, err := sessionManager.List(r.Context(), r.Header.Get(forwardedUserEmailHeader))
+		sessions, err := handler.List(r.Context(), r.Header.Get(forwardedUserEmailHeader))
 		if err != nil {
 			logger.Error("failed to list sessions", "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -63,7 +60,7 @@ func handleListSessions(
 }
 
 func handleDeleteSession(
-	sessionManager *session.Manager,
+	handler *forwardauth.Handler,
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -74,10 +71,10 @@ func handleDeleteSession(
 		// if session id is missing, the http router will not match to this route and sends a 404 directly.
 		id := r.PathValue("id")
 		// Delete checks that the session is associated with the user
-		err := sessionManager.Delete(r.Context(), username, id)
+		err := handler.DeleteSession(r.Context(), username, id)
 		logger.Debug("deleting session", "username", username, "id", id, "err", err)
 		if err != nil {
-			if errors.Is(err, session.ErrSessionNotFound) {
+			if errors.Is(err, forwardauth.ErrSessionNotFound) {
 				http.Error(w, "session not found", http.StatusNotFound)
 				return
 			}
@@ -89,6 +86,10 @@ func handleDeleteSession(
 	})
 }
 
+// ensureUserEmailHeader is a middleware that ensures the forwarded user email header is present
+// Note: handleSessions relies on the forwarded user email header to identify the user, rather than the JWT.
+// ListSessions and DeleteSessions are only accessed after forward-auth has run
+// (this is configured by the HTTPRoute, so we can trust the user email header).
 func ensureUserEmailHeader(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if username := r.Header.Get(forwardedUserEmailHeader); username == "" {

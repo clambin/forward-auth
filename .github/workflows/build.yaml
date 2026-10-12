@@ -4,6 +4,7 @@ on:
     branches:
       - main
       - refresh
+      - cycle
 permissions:
   contents: read
   packages: write

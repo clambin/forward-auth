@@ -11,13 +11,13 @@ import (
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/configuration"
-	"github.com/clambin/forward-auth/internal/session"
+	"github.com/clambin/forward-auth/internal/forwardauth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestHandleListSessions(t *testing.T) {
-	mgr, err := session.New(time.Hour, configuration.StorageConfiguration{})
+	mgr, err := forwardauth.New(time.Hour, nil, configuration.StorageConfiguration{})
 	require.NoError(t, err)
 
 	req, _ := http.NewRequest(http.MethodGet, "/", nil)
@@ -57,13 +57,13 @@ func TestHandleDeleteSession(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mgr, err := session.New(time.Hour, configuration.StorageConfiguration{})
+			handler, err := forwardauth.New(time.Hour, &fakeAuthorizer{allow: true}, configuration.StorageConfiguration{})
 			require.NoError(t, err)
 
-			tok, err := mgr.CreateSession(t.Context(), provider.Identity{Email: "test@example.com"}, &http.Request{})
+			tok, err := handler.CreateSession(t.Context(), provider.Identity{Email: "test@example.com"}, &http.Request{})
 			require.NoError(t, err)
 
-			h := handleSessions(mgr, slog.New(slog.DiscardHandler))
+			h := handleSessions(handler, slog.New(slog.DiscardHandler))
 
 			req, _ := http.NewRequest(http.MethodDelete, cmp.Or(tt.path, "/session/"+tok.SessionID), nil)
 			if tt.userHeader != "" {
@@ -73,7 +73,7 @@ func TestHandleDeleteSession(t *testing.T) {
 			h.ServeHTTP(resp, req)
 			assert.Equal(t, tt.want, resp.Code)
 
-			count, _ := mgr.Len(t.Context())
+			count, _ := handler.Len(t.Context())
 			if resp.Code == http.StatusNoContent {
 				assert.Equal(t, 0, count)
 			} else {

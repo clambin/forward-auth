@@ -4,6 +4,7 @@ on:
     branches-ignore:
       - main
       - refresh
+      - cycle
   workflow_call:
     secrets:
       codecov-token:

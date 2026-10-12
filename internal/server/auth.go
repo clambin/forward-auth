@@ -7,9 +7,8 @@ import (
 	"net/url"
 	"slices"
 	"strings"
-	"uuid"
 
-	"github.com/clambin/forward-auth/internal/session"
+	"github.com/clambin/forward-auth/internal/forwardauth"
 )
 
 const (
@@ -27,9 +26,8 @@ func handleForwardAuth(
 	cookieName string,
 	key []byte,
 	domain string,
-	sessionManager *session.Manager,
+	handler *forwardauth.Handler,
 	authenticator Authenticator,
-	authorizer Authorizer,
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -38,7 +36,7 @@ func handleForwardAuth(
 
 		// request logger
 		reqLogger := logger.With(
-			slog.String("reqID", uuid.New().String()),
+			//slog.String("reqID", uuid.New().String()),
 			slog.Group("request",
 				slog.String("method", originalMethod),
 				slog.String("url", originalURL.String()),
@@ -63,41 +61,43 @@ func handleForwardAuth(
 			return
 		}
 		signedToken := cookie.Value
-		token, err := session.ParseToken(signedToken, key)
+		token, err := forwardauth.ParseToken(signedToken, key)
 		if err != nil {
 			reqLogger.Error("invalid token in cookie", slog.Any("err", err))
 			redirectToLogin(originalURL)
 			return
 		}
 
-		// if the token has expired, request a new one from the sessionManager
-		if token.Expired() {
-			token, err = sessionManager.Validate(r.Context(), token, r)
-			if err != nil {
-				reqLogger.Error("failed to refresh token", slog.Any("err", err))
-				redirectToLogin(originalURL)
-				return
-			}
-
-			signedToken, err = token.Sign(key)
-			if err != nil {
-				reqLogger.Error("failed to sign token", slog.Any("err", err))
-				http.Error(w, "failed to sign token", http.StatusInternalServerError)
-				return
-			}
-
-			setTokenCookie(w, cookieName, signedToken, domain)
+		result, newToken, err := handler.Validate(r.Context(), token, r)
+		if err != nil {
+			reqLogger.Error("failed to validate token", slog.Any("err", err))
+			http.Error(w, "failed to validate token", http.StatusInternalServerError)
+			return
 		}
 
-		// is the request authorized?
-		if !authorizer.Allow(originalURL, token.Identity.Email) {
-			reqLogger.Warn("request forbidden by authorizer", slog.Any("id", token.Identity.Email))
+		if result == forwardauth.NotAuthenticated {
+			// no valid session. redirect user to the login page
+			redirectToLogin(originalURL)
+			return
+		}
+
+		if result == forwardauth.Forbidden {
+			// authorizer refused access to the resource
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 
-		// the request is authorized
-		setUserHeaders(w, token, authorizer.GroupsForUser(token.Identity.Email))
+		// if the token was updated, resign the token
+		if newToken.ID != token.ID {
+			if signedToken, err = newToken.Sign(key); err != nil {
+				reqLogger.Error("failed to sign token", slog.Any("err", err))
+				http.Error(w, "failed to sign token", http.StatusInternalServerError)
+				return
+			}
+			setTokenCookie(w, cookieName, signedToken, domain)
+		}
+
+		setUserHeaders(w, token, handler.GroupsForUser(token.Identity.Email))
 		w.WriteHeader(http.StatusOK)
 	})
 }
@@ -109,7 +109,7 @@ func handleLogin(
 	cookieName string,
 	key []byte,
 	domain string,
-	tokenManager *session.Manager,
+	handler *forwardauth.Handler,
 	authenticator Authenticator,
 	logger *slog.Logger,
 ) http.Handler {
@@ -136,7 +136,7 @@ func handleLogin(
 		ulog.Debug("user validated successfully")
 
 		// create a token for the new session
-		tok, err := tokenManager.CreateSession(r.Context(), userInfo, r)
+		tok, err := handler.CreateSession(r.Context(), userInfo, r)
 		if err != nil {
 			ulog.Error("failed to create token", slog.Any("err", err))
 			http.Error(w, "failed to create session", http.StatusInternalServerError)
@@ -189,7 +189,7 @@ func originalRequest(r *http.Request) (string, *url.URL) {
 }
 
 // setUserHeaders sets the user headers on the response. Blank headers are not set.
-func setUserHeaders(w http.ResponseWriter, token session.Token, groups []string) {
+func setUserHeaders(w http.ResponseWriter, token forwardauth.Token, groups []string) {
 	h := w.Header()
 	h.Set(forwardedUserEmailHeader, token.Identity.Email)
 	if token.Identity.Name != "" {

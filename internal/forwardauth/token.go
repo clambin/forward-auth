@@ -1,12 +1,14 @@
-package session
+package forwardauth
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"time"
+	"uuid"
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/golang-jwt/jwt/v5"
@@ -15,7 +17,9 @@ import (
 const (
 	refreshTokenByteSize = 32 // 256 bytes
 	tokenExpiration      = 15 * time.Minute
-	tokenIssuer          = "forward-auth"
+	// refreshTokenGracePeriod is how long the previous refresh token is still accepted after it has been rotated.
+	refreshTokenGracePeriod = 10 * time.Second
+	tokenIssuer             = "forward-auth"
 )
 
 type RefreshToken [refreshTokenByteSize]byte
@@ -24,6 +28,16 @@ func generateRefreshToken() RefreshToken {
 	var b [refreshTokenByteSize]byte
 	_, _ = rand.Read(b[:])
 	return b
+}
+
+// next returns the refresh token that succeeds t. The successor is derived from t and the session's secret,
+// so renewing the same refresh token multiple times (e.g. by concurrent requests) always yields the same successor.
+func (t RefreshToken) next(secret []byte) RefreshToken {
+	mac := hmac.New(sha256.New, secret)
+	mac.Write(t[:])
+	var next RefreshToken
+	copy(next[:], mac.Sum(nil))
+	return next
 }
 
 func (t RefreshToken) MarshalJSON() ([]byte, error) {
@@ -77,6 +91,7 @@ type Token struct {
 
 func generateToken(sessionID string, identity provider.Identity) Token {
 	return Token{
+		ID:           uuid.New().String(),
 		Issuer:       tokenIssuer,
 		IssuedAt:     jwt.NewNumericDate(time.Now()),
 		ExpiresAt:    jwt.NewNumericDate(time.Now().Add(tokenExpiration)),

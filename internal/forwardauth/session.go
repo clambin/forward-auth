@@ -1,4 +1,4 @@
-package session
+package forwardauth
 
 import (
 	"context"
@@ -30,25 +30,29 @@ var (
 
 // A Session represents a user session on the server.
 type Session struct {
-	IssuedAt         time.Time         `json:"issuedAt"`
-	LastSeen         time.Time         `json:"lastSeen"`
-	Identity         provider.Identity `json:"identity"`
-	ID               string            `json:"id"`
-	UserAgent        string            `json:"userAgent"`
-	RefreshTokenHash refreshTokenHash  `json:"refreshTokenHash"`
+	IssuedAt                 time.Time         `json:"issuedAt"`
+	LastSeen                 time.Time         `json:"lastSeen"`
+	RotatedAt                time.Time         `json:"rotatedAt"`
+	Identity                 provider.Identity `json:"identity"`
+	ID                       string            `json:"id"`
+	UserAgent                string            `json:"userAgent"`
+	RefreshSecret            []byte            `json:"refreshSecret"`
+	RefreshTokenHash         refreshTokenHash  `json:"refreshTokenHash"`
+	PreviousRefreshTokenHash refreshTokenHash  `json:"previousRefreshTokenHash"`
 }
 
-// A Manager validates the session ID from the http request's session JWT against its data store.
+// A Sessions validates the session ID from the http request's session JWT against its data store.
 // The session is refreshed each time the session JWT expires.  At this point, we generate a new refresh token.
-type Manager struct {
+// The previous refresh token is still accepted for a short grace period after rotation, so concurrent requests carrying the same
+// expired JWT can all renew it.
+type Sessions struct {
 	store
 }
 
-func New(ttl time.Duration, cfg configuration.StorageConfiguration) (*Manager, error) {
-	var store store
+func newSessions(ttl time.Duration, cfg configuration.StorageConfiguration) (Sessions, error) {
 	switch cfg.Type {
 	case "local", "":
-		store = &InMemoryStore{Cache: cache.New[string, Session](ttl, time.Minute)}
+		return Sessions{store: &InMemoryStore{Cache: cache.New[string, Session](ttl, time.Minute)}}, nil
 	case "redis":
 		redisClient := redis.NewClient(&redis.Options{
 			Addr:     cfg.Redis.Addr,
@@ -56,15 +60,14 @@ func New(ttl time.Duration, cfg configuration.StorageConfiguration) (*Manager, e
 			Password: cfg.Redis.Password,
 			DB:       cfg.Redis.DB,
 		})
-		store = &RedisStore{Client: redisClient, TTL: ttl}
+		return Sessions{store: &RedisStore{Client: redisClient, TTL: ttl}}, nil
 	default:
-		return nil, fmt.Errorf("unknown store type: %s", cfg.Type)
+		return Sessions{}, fmt.Errorf("unknown store type: %s", cfg.Type)
 	}
-	return &Manager{store: store}, nil
 }
 
 // CreateSession creates a new session and returns a JWT token to be sent back to the client.
-func (m *Manager) CreateSession(ctx context.Context, identity provider.Identity, r *http.Request) (Token, error) {
+func (m Sessions) CreateSession(ctx context.Context, identity provider.Identity, r *http.Request) (Token, error) {
 	// allocate a session ID
 	sessionID := uuid.New().String()
 	// create the session token that will be sent back to the client
@@ -75,9 +78,11 @@ func (m *Manager) CreateSession(ctx context.Context, identity provider.Identity,
 		userAgent = r.Header.Get("User-Agent")
 	}
 	now := time.Now()
+	refreshSecret := generateRefreshToken()
 	session := Session{
 		ID:               sessionID,
 		Identity:         identity,
+		RefreshSecret:    refreshSecret[:],
 		RefreshTokenHash: token.RefreshToken.hash(),
 		IssuedAt:         now,
 		LastSeen:         now,
@@ -91,19 +96,24 @@ func (m *Manager) CreateSession(ctx context.Context, identity provider.Identity,
 
 // Validate validates that the session in the token exists in the store.  If found, Validate() updates
 // the user agent and the last refresh time in the store. It returns the updated token.
-func (m *Manager) Validate(ctx context.Context, token Token, r *http.Request) (Token, error) {
+func (m Sessions) Validate(ctx context.Context, token Token, r *http.Request) (Token, error) {
 	// if the session doesn't exist, it's an error
 	session, err := m.get(ctx, token.Identity.Email, token.SessionID)
 	if err != nil {
 		return token, err
 	}
 
-	// check that the refresh token matches the stored hash
-	if session.RefreshTokenHash != token.RefreshToken.hash() {
-		return token, ErrInvalidRefreshToken
+	// if the token has expired, or the session's refresh token no longer matches,
+	// create a new token, rotating the refresh token.
+	// rotateRefreshToken fails if the token's refresh token no longer matches the current or previous refresh token.
+	if token.Expired() || token.RefreshToken.hash() != session.RefreshTokenHash {
+		token, session, err = m.rotateRefreshToken(token, session)
+		if err != nil {
+			return token, fmt.Errorf("failed to rotate refresh token: %w", err)
+		}
 	}
 
-	// update the user agent, last refresh time in the store
+	// update the last refresh time and the user agent in the store
 	session.LastSeen = time.Now()
 	if r != nil {
 		session.UserAgent = r.Header.Get("User-Agent")
@@ -113,13 +123,39 @@ func (m *Manager) Validate(ctx context.Context, token Token, r *http.Request) (T
 		return token, err
 	}
 
-	// refresh the token
-	token.ExpiresAt = jwt.NewNumericDate(time.Now().Add(tokenExpiration))
 	return token, nil
 }
 
-func (m *Manager) Delete(ctx context.Context, username string, id string) error {
-	return m.del(ctx, username, id)
+func (m Sessions) rotateRefreshToken(token Token, session Session) (Token, Session, error) {
+	// we'll need to issue a new token. update the ID
+	token.ID = uuid.New().String()
+
+	// check that the refresh token matches the current or previous refresh token
+	now := time.Now()
+	switch token.RefreshToken.hash() {
+	case session.RefreshTokenHash:
+		// current refresh token: rotate it
+		token.RefreshToken = token.RefreshToken.next(session.RefreshSecret)
+		session.PreviousRefreshTokenHash = session.RefreshTokenHash
+		session.RefreshTokenHash = token.RefreshToken.hash()
+		session.RotatedAt = now
+	case session.PreviousRefreshTokenHash:
+		// previous refresh token: the session was already renewed (e.g. by a concurrent request).
+		// only accept it during the grace period after rotation.
+		if now.Sub(session.RotatedAt) > refreshTokenGracePeriod {
+			return Token{}, Session{}, ErrInvalidRefreshToken
+		}
+		// next() returns the same successor i.e., the current refresh token.
+		token.RefreshToken = token.RefreshToken.next(session.RefreshSecret)
+	default:
+		return Token{}, Session{}, ErrInvalidRefreshToken
+	}
+	token.ExpiresAt = jwt.NewNumericDate(now.Add(tokenExpiration))
+	return token, session, nil
+}
+
+func (m Sessions) DeleteSession(ctx context.Context, email string, sessionID string) error {
+	return m.del(ctx, email, sessionID)
 }
 
 // A store abstracts the storage of session data.
@@ -162,6 +198,17 @@ func (s InMemoryStore) del(_ context.Context, email string, sessionID string) er
 	return nil
 }
 
+func (s InMemoryStore) Len(_ context.Context) (int, error) {
+	match := fullScanKey("")
+	var count int
+	for k := range s.Cache.Iterate() {
+		if strings.HasPrefix(k, match) {
+			count++
+		}
+	}
+	return count, nil
+}
+
 func (s InMemoryStore) List(_ context.Context, email string) ([]Session, error) {
 	match := emailScanKey(email, "")
 	sessions := make([]Session, 0, s.Cache.Len())
@@ -171,10 +218,6 @@ func (s InMemoryStore) List(_ context.Context, email string) ([]Session, error) 
 		}
 	}
 	return sessions, nil
-}
-
-func (s InMemoryStore) Len(_ context.Context) (int, error) {
-	return s.Cache.Len(), nil
 }
 
 type RedisStore struct {
@@ -215,6 +258,15 @@ func (s RedisStore) del(ctx context.Context, email string, sessionID string) err
 	return err
 }
 
+func (s RedisStore) Len(ctx context.Context) (int, error) {
+	i := s.Client.Scan(ctx, 0, fullScanKey("*"), 100).Iterator()
+	var found int
+	for i.Next(ctx) {
+		found++
+	}
+	return found, i.Err()
+}
+
 func (s RedisStore) List(ctx context.Context, email string) ([]Session, error) {
 	match := emailScanKey(email, "*")
 	cmds := make(map[string]*redis.StringCmd)
@@ -251,15 +303,6 @@ func (s RedisStore) List(ctx context.Context, email string) ([]Session, error) {
 	return sessions, nil
 }
 
-func (s RedisStore) Len(ctx context.Context) (int, error) {
-	i := s.Client.Scan(ctx, 0, namespaceKeyPrefix+":"+subsystemKeyPrefix+":*", 100).Iterator()
-	var found int
-	for i.Next(ctx) {
-		found++
-	}
-	return found, i.Err()
-}
-
 func key(email string, sessionID string) string {
 	return strings.Join([]string{
 		namespaceKeyPrefix,
@@ -274,6 +317,14 @@ func emailScanKey(email string, glob string) string {
 		namespaceKeyPrefix,
 		subsystemKeyPrefix,
 		base64.StdEncoding.EncodeToString([]byte(email)),
+		glob,
+	}, ":")
+}
+
+func fullScanKey(glob string) string {
+	return strings.Join([]string{
+		namespaceKeyPrefix,
+		subsystemKeyPrefix,
 		glob,
 	}, ":")
 }

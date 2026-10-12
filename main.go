@@ -14,9 +14,9 @@ import (
 	"github.com/clambin/forward-auth/internal/authn"
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/clambin/forward-auth/internal/configuration"
+	"github.com/clambin/forward-auth/internal/forwardauth"
 	"github.com/clambin/forward-auth/internal/observability"
 	"github.com/clambin/forward-auth/internal/server"
-	"github.com/clambin/forward-auth/internal/session"
 	"github.com/goccy/go-yaml"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
@@ -50,9 +50,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	authorizer := authz.Authorizer{Rules: cfg.Authz.Rules, Groups: cfg.Authz.Groups}
+	authorizer := &authz.Authorizer{Rules: cfg.Authz.Rules, Groups: cfg.Authz.Groups}
 
-	sessionMgr, err := session.New(cfg.Session.SessionTTL, cfg.Storage)
+	handler, err := forwardauth.New(cfg.Session.SessionTTL, authorizer, cfg.Storage)
 	if err != nil {
 		logger.Error("failed to create token manager cache", "err", err)
 		os.Exit(1)
@@ -74,7 +74,7 @@ func main() {
 	prometheus.MustRegister(
 		metrics,
 		observability.InstrumentedStore{
-			Store: sessionMgr,
+			Store: handler,
 			Desc: prometheus.NewDesc(
 				"forward_auth_session_count",
 				"Number of active sessions",
@@ -102,7 +102,7 @@ func main() {
 	g.Go(func() error {
 		return httputils.RunServer(ctx, &http.Server{
 			Addr:    cfg.Server.Addr,
-			Handler: server.New(cfg.Server, sessionMgr, authenticator, &authorizer, redisClient, metrics, logger),
+			Handler: server.New(cfg.Server, handler, authenticator, redisClient, metrics, logger),
 		})
 	})
 	if err = g.Wait(); err != nil {

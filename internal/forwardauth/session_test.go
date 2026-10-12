@@ -1,4 +1,4 @@
-package session
+package forwardauth
 
 import (
 	"net/http"
@@ -36,12 +36,12 @@ func TestManager(t *testing.T) {
 			req, _ := http.NewRequest(http.MethodGet, "/", nil)
 			req.Header.Set("User-Agent", "test")
 
-			mgr, err := New(tt.ttl, tt.cfg)
+			sess, err := newSessions(tt.ttl, tt.cfg)
 			require.NoError(t, err)
 
 			// create a session
 			identity := provider.Identity{Email: "foo@example.com", Name: "foo", Subject: "1234"}
-			token, err := mgr.CreateSession(ctx, identity, req)
+			token, err := sess.CreateSession(ctx, identity, req)
 			require.NoError(t, err)
 
 			assert.Equal(t, identity, token.Identity)
@@ -52,18 +52,50 @@ func TestManager(t *testing.T) {
 			assert.True(t, token.Expired())
 
 			// mgr should issue a new token
-			token, err = mgr.Validate(ctx, token, req)
+			oldToken := token
+			token, err = sess.Validate(ctx, token, req)
 			require.NoError(t, err)
 			assert.Equal(t, "foo@example.com", token.Identity.Email)
 			assert.False(t, token.Expired())
+			assert.NotEqual(t, oldToken.RefreshToken, token.RefreshToken)
+
+			// the previous refresh token is still accepted (e.g. concurrent requests) and yields the same refresh token
+			concurrentToken, err := sess.Validate(ctx, oldToken, req)
+			require.NoError(t, err)
+			assert.False(t, concurrentToken.Expired())
+			assert.Equal(t, token.RefreshToken, concurrentToken.RefreshToken)
+
+			// renewing the current refresh token again rotates it
+			token.ExpiresAt.Time = time.Now().Add(-1 * time.Minute)
+			previousToken := token
+			token, err = sess.Validate(ctx, token, req)
+			require.NoError(t, err)
+			assert.NotEqual(t, previousToken.RefreshToken, token.RefreshToken)
+
+			// the previous refresh token is still accepted, but the one before that is not
+			_, err = sess.Validate(ctx, previousToken, req)
+			require.NoError(t, err)
+			_, err = sess.Validate(ctx, oldToken, req)
+			require.ErrorIs(t, err, ErrInvalidRefreshToken)
+
+			// once the grace period has passed, the previous refresh token is no longer accepted
+			s, err := sess.get(ctx, token.Identity.Email, token.SessionID)
+			require.NoError(t, err)
+			s.RotatedAt = time.Now().Add(-refreshTokenGracePeriod - time.Second)
+			require.NoError(t, sess.put(ctx, token.Identity.Email, token.SessionID, s))
+			_, err = sess.Validate(ctx, previousToken, req)
+			require.ErrorIs(t, err, ErrInvalidRefreshToken)
+			// the current refresh token is still accepted
+			token, err = sess.Validate(ctx, token, req)
+			require.NoError(t, err)
 
 			// only 1 session should exist
-			found, err := mgr.Len(ctx)
+			found, err := sess.Len(ctx)
 			require.NoError(t, err)
 			assert.Equal(t, 1, found)
 
 			// list the sessions
-			sessions, err := mgr.List(ctx, "foo@example.com")
+			sessions, err := sess.List(ctx, "foo@example.com")
 			require.NoError(t, err)
 			require.Len(t, sessions, 1)
 			// token is linked to the right session
@@ -80,24 +112,24 @@ func TestManager(t *testing.T) {
 
 			// invalidate the token
 			token.RefreshToken = generateRefreshToken()
-			_, err = mgr.Validate(ctx, token, req)
+			_, err = sess.Validate(ctx, token, req)
 			require.ErrorIs(t, err, ErrInvalidRefreshToken)
 
 			// delete the session
-			err = mgr.Delete(ctx, token.Identity.Email, token.SessionID)
+			err = sess.DeleteSession(ctx, token.Identity.Email, token.SessionID)
 			require.NoError(t, err)
-			count, _ := mgr.Len(t.Context())
+			count, _ := sess.Len(t.Context())
 			assert.Zero(t, count)
 
 			// delete a non-existent session returns an error
-			err = mgr.Delete(ctx, token.Identity.Email, token.SessionID)
+			err = sess.DeleteSession(ctx, token.Identity.Email, token.SessionID)
 			require.ErrorIs(t, err, ErrSessionNotFound)
 		})
 	}
 }
 
 func TestManager_InvalidStorage(t *testing.T) {
-	_, err := New(time.Hour, configuration.StorageConfiguration{Type: "invalid"})
+	_, err := newSessions(time.Hour, configuration.StorageConfiguration{Type: "invalid"})
 	require.Error(t, err)
 }
 

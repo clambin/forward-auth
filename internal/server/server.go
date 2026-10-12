@@ -10,8 +10,8 @@ import (
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/clambin/forward-auth/internal/configuration"
+	"github.com/clambin/forward-auth/internal/forwardauth"
 	"github.com/clambin/forward-auth/internal/server/web"
-	"github.com/clambin/forward-auth/internal/session"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -40,9 +40,8 @@ type RedisClient interface {
 // New returns a new http.Handler that serves all API endpoints and the web frontend.
 func New(
 	cfg configuration.ServerConfiguration,
-	sessionManager *session.Manager,
+	handler *forwardauth.Handler,
 	authenticator Authenticator,
-	authorizer Authorizer,
 	redisClient RedisClient,
 	metrics Metrics,
 	logger *slog.Logger,
@@ -55,9 +54,8 @@ func New(
 				cfg.CookieName,
 				[]byte(cfg.Key),
 				cfg.Domain,
-				sessionManager,
+				handler,
 				authenticator,
-				authorizer,
 				logger.With(slog.String("handler", "forwardAuth")),
 			),
 		),
@@ -68,7 +66,7 @@ func New(
 				cfg.CookieName,
 				[]byte(cfg.Key),
 				cfg.Domain,
-				sessionManager,
+				handler,
 				authenticator,
 				logger.With(slog.String("handler", "login")),
 			),
@@ -76,7 +74,7 @@ func New(
 	)
 
 	mux.Handle("/api/sessions/", http.StripPrefix("/api/sessions", handleSessions(
-		sessionManager,
+		handler,
 		logger,
 	)))
 

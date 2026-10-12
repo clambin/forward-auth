@@ -1,4 +1,4 @@
-package session
+package forwardauth
 
 import (
 	"bytes"
@@ -79,15 +79,27 @@ func TestParseToken(t *testing.T) {
 	}
 }
 
+func TestRefreshToken_next(t *testing.T) {
+	refreshToken := generateRefreshToken()
+	secret := []byte("secret")
+
+	// next is deterministic for the same token and secret
+	next := refreshToken.next(secret)
+	assert.Equal(t, next, refreshToken.next(secret))
+	assert.NotEqual(t, refreshToken, next)
+	// a different secret yields a different successor
+	assert.NotEqual(t, next, refreshToken.next([]byte("other secret")))
+}
+
 func TestRefreshTokenHash_JSON(t *testing.T) {
 	refreshToken := generateRefreshToken()
 	hash := refreshToken.hash()
 
-	bytes, err := json.Marshal(hash)
+	b, err := json.Marshal(hash)
 	require.NoError(t, err)
 
 	var read refreshTokenHash
-	require.NoError(t, json.Unmarshal(bytes, &read))
+	require.NoError(t, json.Unmarshal(b, &read))
 	require.Equal(t, hash, read)
 }
 
