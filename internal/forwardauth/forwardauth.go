@@ -57,7 +57,7 @@ func (h *Handler) Validate(ctx context.Context, token Token, r *http.Request) (R
 	// authorize the request
 	_, requestURL := OriginalRequest(r)
 	if !h.Allow(requestURL, newToken.Identity.Email) {
-		return Forbidden, token, nil
+		return Forbidden, newToken, nil
 	}
 	return Allowed, newToken, nil
 }
