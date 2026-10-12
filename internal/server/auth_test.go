@@ -336,7 +336,7 @@ func (f *fakeAuthenticator) ConfirmLogin(_ context.Context, state, code string) 
 	return provider.Identity{Name: "foo", Email: "foo@example.com"}, u, nil
 }
 
-var _ Authorizer = (*fakeAuthorizer)(nil)
+var _ forwardauth.Authorizer = (*fakeAuthorizer)(nil)
 
 type fakeAuthorizer struct {
 	allow  bool

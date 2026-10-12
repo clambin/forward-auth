@@ -60,14 +60,14 @@ func handleForwardAuth(
 		// get the jwt token
 		cookie, err := r.Cookie(cookieName)
 		if err != nil {
-			reqLogger.Debug("no token in cookie")
+			reqLogger.Debug("no token in cookie. redirecting to login page")
 			redirectToLogin(originalURL)
 			return
 		}
 		signedToken := cookie.Value
 		token, err := forwardauth.ParseToken(signedToken, key)
 		if err != nil {
-			reqLogger.Error("invalid token in cookie", slog.Any("err", err))
+			reqLogger.Error("invalid token in cookie. redirecting to login page", slog.Any("err", err))
 			redirectToLogin(originalURL)
 			return
 		}
@@ -81,18 +81,21 @@ func handleForwardAuth(
 
 		if result == forwardauth.NotAuthenticated {
 			// no valid session. redirect user to the login page
+			reqLogger.Debug("no valid session. redirecting to login page")
 			redirectToLogin(originalURL)
 			return
 		}
 
 		if result == forwardauth.Forbidden {
 			// authorizer refused access to the resource
+			reqLogger.Debug("access forbidden")
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 
 		// if the token was updated, resign the token
 		if newToken.ID != token.ID {
+			reqLogger.Debug("token updated. resigning token")
 			if signedToken, err = newToken.Sign(key); err != nil {
 				reqLogger.Error("failed to sign token", slog.Any("err", err))
 				http.Error(w, "failed to sign token", http.StatusInternalServerError)

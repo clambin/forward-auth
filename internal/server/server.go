@@ -4,11 +4,9 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"net/url"
 
 	"github.com/clambin/forward-auth/internal/authn"
 	"github.com/clambin/forward-auth/internal/authn/provider"
-	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/forwardauth"
 	"github.com/clambin/forward-auth/internal/server/web"
@@ -21,13 +19,6 @@ type Authenticator interface {
 }
 
 var _ Authenticator = (*authn.Authenticator)(nil)
-
-type Authorizer interface {
-	Allow(url *url.URL, user string) bool
-	GroupsForUser(email string) []string
-}
-
-var _ Authorizer = (*authz.Authorizer)(nil)
 
 type Metrics interface {
 	InstrumentedHandler(label string) func(http.Handler) http.Handler
