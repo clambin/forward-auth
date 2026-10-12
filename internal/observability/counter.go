@@ -22,7 +22,10 @@ func (i InstrumentedStore) Describe(descs chan<- *prometheus.Desc) {
 }
 
 func (i InstrumentedStore) Collect(metrics chan<- prometheus.Metric) {
-	if count, err := i.Store.Len(context.Background()); err == nil {
-		metrics <- prometheus.MustNewConstMetric(i.Desc, prometheus.GaugeValue, float64(count))
+	count, err := i.Store.Len(context.Background())
+	if err != nil {
+		metrics <- prometheus.NewInvalidMetric(i.Desc, err)
+		return
 	}
+	metrics <- prometheus.MustNewConstMetric(i.Desc, prometheus.GaugeValue, float64(count))
 }

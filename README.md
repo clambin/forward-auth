@@ -469,11 +469,6 @@ This is useful for:
 - Security (invalidate compromised sessions)
 - Administration (force logout)
 
-Deleting a session removes it (and with it, the refresh token hashes) from the session store, so the JWT can no longer be renewed.
-
-**Note:** deleting a session does not invalidate a JWT that has already been issued. Until that JWT expires (up to 15 minutes),
-requests carrying it are still authenticated.
-
 ---
 
 ### Logging Out
@@ -485,7 +480,7 @@ To log out a session:
 3. Subsequent requests are redirected to the identity provider
 
 Users can only delete their own sessions. The session IDs of a user's sessions are shown in the UI,
-or can be retrieved via the API:
+or can be retrieved via the API.
 
 ## Metrics
 
