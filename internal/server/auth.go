@@ -1,7 +1,6 @@
 package server
 
 import (
-	"cmp"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -32,7 +31,7 @@ func handleForwardAuth(
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// restore original request
-		originalMethod, originalURL := originalRequest(r)
+		originalMethod, originalURL := forwardauth.OriginalRequest(r)
 
 		// request logger
 		reqLogger := logger.With(
@@ -168,24 +167,6 @@ func setTokenCookie(w http.ResponseWriter, cookieName, signedToken, domain strin
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
-}
-
-// originalRequest restores the original request method and URL from the Traefik forwardAuthrequest headers.
-// This allows us to route forwardAuth requests vs. logout requests (/_oauth/logout) to the correct handler.
-func originalRequest(r *http.Request) (string, *url.URL) {
-	path := cmp.Or(r.Header.Get("X-Forwarded-Uri"), "/")
-	var rawQuery string
-	if n := strings.Index(path, "?"); n > 0 {
-		rawQuery = path[n+1:]
-		path = path[:n]
-	}
-
-	return cmp.Or(r.Header.Get("X-Forwarded-Method"), http.MethodGet), &url.URL{
-		Scheme:   cmp.Or(r.Header.Get("X-Forwarded-Proto"), "https"),
-		Host:     r.Header.Get("X-Forwarded-Host"),
-		Path:     path,
-		RawQuery: rawQuery,
-	}
 }
 
 // setUserHeaders sets the user headers on the response. Blank headers are not set.

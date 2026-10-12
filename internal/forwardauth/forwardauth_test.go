@@ -19,8 +19,9 @@ func TestHandler_Refresh(t *testing.T) {
 	ctx := t.Context()
 	h, err := forwardauth.New(6*time.Hour, &fakeAuthorizer{allow: true}, configuration.StorageConfiguration{})
 	require.NoError(t, err)
-	req, _ := http.NewRequest(http.MethodGet, "/?mode=refresh", nil)
+	req, _ := http.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("User-Agent", "foo")
+	req.Header.Set("X-Forwarded-Uri", "/?mode=refresh")
 
 	synctest.Test(t, func(t *testing.T) {
 		// create a new session

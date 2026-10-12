@@ -103,29 +103,36 @@ func (m Sessions) Validate(ctx context.Context, token Token, r *http.Request) (T
 		return token, err
 	}
 
-	// if the token has expired, or the session's refresh token no longer matches,
+	// if the token has not expired and is still presenting the same refresh token, consider the token valid
+	if !token.Expired() && token.RefreshToken.hash() == session.RefreshTokenHash {
+		return token, nil
+	}
+
+	// either the token has expired, or the client is presenting a new refresh token (possibly the next rotated refresh token).
 	// create a new token, rotating the refresh token.
 	// rotateRefreshToken fails if the token's refresh token no longer matches the current or previous refresh token.
-	if token.Expired() || token.RefreshToken.hash() != session.RefreshTokenHash {
-		token, session, err = m.rotateRefreshToken(token, session)
-		if err != nil {
-			return token, fmt.Errorf("failed to rotate refresh token: %w", err)
-		}
+
+	token, session, err = m.rotateRefreshToken(token, session)
+	if err != nil {
+		return token, fmt.Errorf("failed to rotate refresh token: %w", err)
 	}
 
 	// update the last refresh time and the user agent in the store
+	// trade-off: ideally, we'd update these for each request. However, concurrent requests could lead to
+	// one request rotating the refresh token and then a second request writing back the old refresh token.
 	session.LastSeen = time.Now()
 	if r != nil {
 		session.UserAgent = r.Header.Get("User-Agent")
 	}
-	err = m.put(ctx, token.Identity.Email, token.SessionID, session)
-	if err != nil {
-		return token, err
-	}
-
-	return token, nil
+	return token, m.put(ctx, token.Identity.Email, token.SessionID, session)
 }
 
+// rotateRefreshToken rotates the refresh token for a session. It returns the new token, session, and any error that occurred.
+//
+// In rotating the refresh token, we need to ensure that concurrent requests do not overwrite each other's changes.
+// To protect against that, we keep track of the current refresh token and the previous refresh token.
+// When we rotate, and we see that the client is presenting the previous refresh token, we accept it for a short
+// period of time.
 func (m Sessions) rotateRefreshToken(token Token, session Session) (Token, Session, error) {
 	// we'll need to issue a new token. update the ID
 	token.ID = uuid.New().String()
@@ -140,7 +147,7 @@ func (m Sessions) rotateRefreshToken(token Token, session Session) (Token, Sessi
 		session.RefreshTokenHash = token.RefreshToken.hash()
 		session.RotatedAt = now
 	case session.PreviousRefreshTokenHash:
-		// previous refresh token: the session was already renewed (e.g. by a concurrent request).
+		// previous refresh token: the refresh token was already rotated by another request.
 		// only accept it during the grace period after rotation.
 		if now.Sub(session.RotatedAt) > refreshTokenGracePeriod {
 			return Token{}, Session{}, ErrInvalidRefreshToken

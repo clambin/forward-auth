@@ -39,7 +39,6 @@ The main differences with the original are:
   - [What is a Session?](#what-is-a-session)
   - [Deleting Sessions via UI](#deleting-sessions-via-ui)
   - [Logging Out](#logging-out)
-  - [What Happens After Deletion?](#what-happens-after-deletion)
 - [Metrics](#metrics)
 - [Troubleshooting](#troubleshooting)
 - [Author](#author)
@@ -151,9 +150,9 @@ Note: Redis must be 6.2 or higher.
     - the session ID
     - the user's identity
     - a refresh token
-- The JWT is valid for 15 minutes. While it is valid, requests are authenticated from the JWT alone, without consulting the session store.
+- The JWT is valid for 15 minutes.
 - Once the JWT has expired, `forward-auth` renews it: the refresh token is checked against the session store and,
-  if the session still exists, a new JWT with a new refresh token is issued and sent back in the cookie.
+  if the session still exists and matches the refresh token, a new JWT is issued with a new refresh token and is sent back in the cookie.
 - Refresh tokens are rotated on every renewal. For a few seconds after rotation, the previous refresh token is still accepted,
   so concurrent requests carrying the same expired JWT can all renew it. After that, only the current refresh token is accepted.
 
@@ -437,18 +436,16 @@ A session represents an authenticated user. It is made up of two parts:
 The JWT's lifecycle:
 
 1. At login, a new session is created in the store and a JWT is issued in the session cookie.
-2. While the JWT is valid, every request is authenticated from the JWT alone. The session store is not consulted.
-3. Once the JWT expires, `forward-auth` looks up the session in the store and checks the JWT's refresh token
+2. Once the JWT expires, `forward-auth` looks up the session in the store and checks the JWT's refresh token
    against the stored hashes:
    - If it matches the **current** refresh token, the refresh token is rotated: a new refresh token is derived
      from the current one and the session's secret. The current hash becomes the previous hash, and the new refresh token's hash
      becomes the current hash.
    - If it matches the **previous** refresh token, and the refresh token was rotated less than 10 seconds ago,
      the session was already renewed (typically by a concurrent request). The refresh token is not rotated again:
-     the JWT receives the current refresh token instead. After those 10 seconds, the previous refresh token is rejected.
-
+     the JWT receives the current refresh token instead. After those 10 seconds, the previous refresh token is rejected. 
    In both cases, the session's last seen timestamp and user agent are updated, and a renewed JWT is sent back in the cookie.
-4. If the session no longer exists (it was deleted, or it expired after `session.session_ttl` without being renewed),
+3. If the session no longer exists (it was deleted, or it expired after `session.session_ttl` without being renewed),
    or the refresh token matches neither the current refresh token nor (within the 10-second grace period) the previous one,
    the JWT cannot be renewed and the user is redirected to the identity provider to log in again.
 
@@ -485,39 +482,11 @@ To log out a session:
 
 1. Call the delete endpoint for that session
 2. The session is removed from the store
-3. While the current JWT is valid, requests are still authenticated
-4. Once the current JWT expires, it can't be renewed and subsequent requests are redirected to the identity provider
+3. Subsequent requests are redirected to the identity provider
 
 Users can only delete their own sessions. The session IDs of a user's sessions are shown in the UI,
 or can be retrieved via the API:
 
-```bash
-curl -b "forward-auth-session=<jwt>" \
-  https://auth.example.com/api/sessions/list
-```
-
-To delete a session:
-
-```bash
-curl -X DELETE \
-  -b "forward-auth-session=<jwt>" \
-  https://auth.example.com/api/sessions/session/<session-id>
-```
-
-Here, `<jwt>` is the value of the session cookie, which authenticates the request.
-
----
-
-### What Happens After Deletion?
-
-- The session, and therefore the refresh token hashes, is removed from storage (local or Redis)
-- The cookie may still exist in the browser, and its JWT remains valid until it expires (up to 15 minutes).
-  During that time, requests are still authenticated.
-- Once the JWT expires:
-  - Renewing the JWT fails, as the session can't be found
-  - User is redirected to the identity provider to log in again
-
---- 
 ## Metrics
 
 `forward-auth` exposes the following Prometheus metrics on the `/metrics` endpoint:

@@ -67,9 +67,9 @@ func TestHandleForwardAuth(t *testing.T) {
 	}
 }
 
-// TestTestHandleForwardAuth_InvalidCookie handles a request with an invalid cookie.
+// TestHandleForwardAuth_InvalidCookie handles a request with an invalid cookie.
 // Separate test because it didn't fit in the table-driven TestHandleForwardAuth.
-func TestTestHandleForwardAuth_InvalidCookie(t *testing.T) {
+func TestHandleForwardAuth_InvalidCookie(t *testing.T) {
 	handler, _ := forwardauth.New(time.Hour, &fakeAuthorizer{allow: true}, configuration.StorageConfiguration{})
 
 	h := handleForwardAuth(
@@ -89,6 +89,38 @@ func TestTestHandleForwardAuth_InvalidCookie(t *testing.T) {
 	h.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusSeeOther, resp.Code)
 	assert.NotEmpty(t, resp.Header().Get("Location"))
+}
+
+// TestHandleForwardAuth_NoSession validates that a request with a valid cookie for a deleted session is rejected.
+func TestHandleForwardAuth_NoSession(t *testing.T) {
+	const cookieName = "test"
+	var fAuthn fakeAuthenticator
+	fAuthz := fakeAuthorizer{allow: true}
+	handler, _ := forwardauth.New(time.Hour, &fAuthz, configuration.StorageConfiguration{})
+
+	h := handleForwardAuth(
+		cookieName,
+		[]byte("my-signing-key"),
+		".example.com",
+		handler,
+		&fAuthn,
+		slog.New(slog.DiscardHandler),
+	)
+
+	req := forwardAuthRequest("https://example.com/?mode=true")
+
+	tok, err := handler.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, req)
+	require.NoError(t, err)
+	rawToken, err := tok.Sign([]byte("my-signing-key"))
+	require.NoError(t, err)
+	req.AddCookie(&http.Cookie{Name: cookieName, Value: rawToken})
+
+	_ = handler.DeleteSession(t.Context(), "foo@example.com", tok.SessionID)
+
+	resp := httptest.NewRecorder()
+	h.ServeHTTP(resp, req)
+	assert.Equal(t, http.StatusSeeOther, resp.Code)
+	assert.Contains(t, resp.Header().Get("Location"), "https://oicd.example.com/_oauth?code=")
 }
 
 func TestForwardAuthHandler_Headers(t *testing.T) {

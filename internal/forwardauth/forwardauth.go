@@ -1,18 +1,16 @@
+// Package forwardauth implements the forwardAuth functionality.
 package forwardauth
 
 import (
 	"cmp"
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"codeberg.org/clambin/go-common/cache"
 	"github.com/clambin/forward-auth/internal/configuration"
-	"github.com/redis/go-redis/v9"
 )
 
 type Result int
@@ -36,22 +34,12 @@ type Handler struct {
 }
 
 func New(ttl time.Duration, authorizer Authorizer, cfg configuration.StorageConfiguration) (*Handler, error) {
-	var store store
-	switch cfg.Type {
-	case "local", "":
-		store = &InMemoryStore{Cache: cache.New[string, Session](ttl, time.Minute)}
-	case "redis":
-		redisClient := redis.NewClient(&redis.Options{
-			Addr:     cfg.Redis.Addr,
-			Username: cfg.Redis.Username,
-			Password: cfg.Redis.Password,
-			DB:       cfg.Redis.DB,
-		})
-		store = &RedisStore{Client: redisClient, TTL: ttl}
-	default:
-		return nil, fmt.Errorf("unknown store type: %s", cfg.Type)
+	var h *Handler
+	sessions, err := newSessions(ttl, cfg)
+	if err == nil {
+		h = &Handler{Sessions: sessions, Authorizer: authorizer}
 	}
-	return &Handler{store: store, Authorizer: authorizer}, nil
+	return h, err
 }
 
 // Validate evaluates whether the user is allowed to access the requested URL.
@@ -61,21 +49,22 @@ func (h *Handler) Validate(ctx context.Context, token Token, r *http.Request) (R
 	// validate the session (i.e., authenticate the user)
 	newToken, err := h.Sessions.Validate(ctx, token, r)
 	if err != nil {
-		if errors.Is(err, ErrSessionNotFound) {
+		if errors.Is(err, ErrSessionNotFound) || errors.Is(err, ErrInvalidRefreshToken) {
 			return NotAuthenticated, Token{}, nil
 		}
 		return Error, token, err
 	}
 	// authorize the request
-	if !h.Allow(originalRequestURL(r), newToken.Identity.Email) {
+	_, requestURL := OriginalRequest(r)
+	if !h.Allow(requestURL, newToken.Identity.Email) {
 		return Forbidden, token, nil
 	}
 	return Allowed, newToken, nil
 }
 
-// originalRequestURL restores the original request method and URL from the Traefik forwardAuthrequest headers.
+// OriginalRequest restores the original request method and URL from the Traefik forwardAuthrequest headers.
 // This allows us to route forwardAuth requests vs. logout requests (/_oauth/logout) to the correct handler.
-func originalRequestURL(r *http.Request) *url.URL {
+func OriginalRequest(r *http.Request) (string, *url.URL) {
 	path := cmp.Or(r.Header.Get("X-Forwarded-Uri"), "/")
 	var rawQuery string
 	if n := strings.Index(path, "?"); n > 0 {
@@ -83,7 +72,7 @@ func originalRequestURL(r *http.Request) *url.URL {
 		path = path[:n]
 	}
 
-	return &url.URL{
+	return cmp.Or(r.Header.Get("X-Forwarded-Method"), http.MethodGet), &url.URL{
 		Scheme:   cmp.Or(r.Header.Get("X-Forwarded-Proto"), "https"),
 		Host:     r.Header.Get("X-Forwarded-Host"),
 		Path:     path,
