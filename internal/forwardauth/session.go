@@ -253,11 +253,11 @@ func (s RedisStore) update(ctx context.Context, email string, sessionID string, 
 		Mode:    "XX",
 		KeepTTL: true,
 	}).Result()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		return fmt.Errorf("redis: %w", err)
+	}
 	if errors.Is(err, redis.Nil) || value == "" {
 		return ErrSessionNotFound
-	}
-	if err != nil {
-		return fmt.Errorf("redis: %w", err)
 	}
 	return nil
 }
