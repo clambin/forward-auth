@@ -111,6 +111,52 @@ func TestHandler_Authorize(t *testing.T) {
 	}
 }
 
+func TestOriginalRequest(t *testing.T) {
+	type want struct {
+		method string
+		path   string
+	}
+	tests := []struct {
+		name    string
+		headers map[string]string
+		want    want
+	}{
+		{
+			name:    "basic",
+			headers: map[string]string{"X-Forwarded-Uri": "/", "X-Forwarded-Host": "example.com"},
+			want:    want{http.MethodGet, "https://example.com/"},
+		},
+		{
+			name:    "method",
+			headers: map[string]string{"X-Forwarded-Method": http.MethodPost, "X-Forwarded-Uri": "/", "X-Forwarded-Host": "example.com"},
+			want:    want{http.MethodPost, "https://example.com/"},
+		},
+		{
+			name:    "encoded path",
+			headers: map[string]string{"X-Forwarded-Uri": "/files/a%2Fb", "X-Forwarded-Host": "example.com"},
+			want:    want{http.MethodGet, "https://example.com/files/a/b"},
+		},
+		{
+			name:    "arguments",
+			headers: map[string]string{"X-Forwarded-Uri": "/?arg=true", "X-Forwarded-Host": "example.com"},
+			want:    want{http.MethodGet, "https://example.com/?arg=true"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, _ := http.NewRequest(http.MethodGet, "/", nil)
+			for k, v := range tt.headers {
+				req.Header.Set(k, v)
+			}
+
+			method, path := forwardauth.OriginalRequest(req)
+			assert.Equal(t, tt.want.method, method)
+			assert.Equal(t, tt.want.path, path.String())
+		})
+	}
+}
+
 var _ forwardauth.Authorizer = &fakeAuthorizer{}
 
 type fakeAuthorizer struct{ allow bool }

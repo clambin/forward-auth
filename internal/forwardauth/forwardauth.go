@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/clambin/forward-auth/internal/configuration"
@@ -66,10 +65,11 @@ func (h *Handler) Validate(ctx context.Context, token Token, r *http.Request) (R
 // This allows us to route forwardAuth requests vs. logout requests (/_oauth/logout) to the correct handler.
 func OriginalRequest(r *http.Request) (string, *url.URL) {
 	path := cmp.Or(r.Header.Get("X-Forwarded-Uri"), "/")
+
 	var rawQuery string
-	if n := strings.Index(path, "?"); n > 0 {
-		rawQuery = path[n+1:]
-		path = path[:n]
+	if u, err := url.ParseRequestURI(path); err == nil {
+		path = u.Path
+		rawQuery = u.RawQuery
 	}
 
 	return cmp.Or(r.Header.Get("X-Forwarded-Method"), http.MethodGet), &url.URL{
