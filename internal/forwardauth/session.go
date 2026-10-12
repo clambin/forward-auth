@@ -124,7 +124,7 @@ func (m Sessions) Validate(ctx context.Context, token Token, r *http.Request) (T
 	if r != nil {
 		session.UserAgent = r.Header.Get("User-Agent")
 	}
-	return token, m.put(ctx, token.Identity.Email, token.SessionID, session)
+	return token, m.update(ctx, token.Identity.Email, token.SessionID, session)
 }
 
 // rotateRefreshToken rotates the refresh token for a session. It returns the new token, session, and any error that occurred.
@@ -169,6 +169,7 @@ func (m Sessions) DeleteSession(ctx context.Context, email string, sessionID str
 // Currently implemented with an in-memory cache and Redis.
 type store interface {
 	put(ctx context.Context, email string, sessionID string, session Session) error
+	update(ctx context.Context, email string, sessionID string, session Session) error
 	get(ctx context.Context, email string, sessionID string) (Session, error)
 	del(ctx context.Context, email string, sessionID string) error
 	Len(ctx context.Context) (int, error)
@@ -186,6 +187,11 @@ type InMemoryStore struct {
 
 func (s InMemoryStore) put(_ context.Context, email string, sessionID string, session Session) error {
 	s.Cache.Add(key(email, sessionID), session)
+	return nil
+}
+
+func (s InMemoryStore) update(_ context.Context, email string, sessionID string, session Session) error {
+	s.Cache.Update(key(email, sessionID), session)
 	return nil
 }
 
@@ -238,7 +244,24 @@ func (s RedisStore) put(ctx context.Context, email string, sessionID string, ses
 		return fmt.Errorf("json: %w", err)
 	}
 	return s.Client.Set(ctx, key(email, sessionID), rawSession, s.TTL).Err()
+}
 
+func (s RedisStore) update(ctx context.Context, email string, sessionID string, session Session) error {
+	rawSession, err := json.Marshal(session)
+	if err != nil {
+		return fmt.Errorf("json: %w", err)
+	}
+	value, err := s.Client.SetArgs(ctx, key(email, sessionID), rawSession, redis.SetArgs{
+		Mode:    "XX",
+		KeepTTL: true,
+	}).Result()
+	if err != nil {
+		return fmt.Errorf("redis: %w", err)
+	}
+	if value == "" {
+		return ErrSessionNotFound
+	}
+	return nil
 }
 
 func (s RedisStore) get(ctx context.Context, email string, sessionID string) (Session, error) {
