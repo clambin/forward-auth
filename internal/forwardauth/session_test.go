@@ -108,7 +108,7 @@ func TestManager(t *testing.T) {
 			assert.Equal(t, "test", sessions[0].UserAgent)
 			// timestamps are filled in
 			assert.NotZero(t, sessions[0].IssuedAt)
-			assert.NotZero(t, sessions[0].LastSeen)
+			assert.NotZero(t, sessions[0].RotatedAt)
 
 			// invalidate the token
 			token.RefreshToken = generateRefreshToken()

@@ -31,7 +31,6 @@ var (
 // A Session represents a user session on the server.
 type Session struct {
 	IssuedAt                 time.Time         `json:"issuedAt"`
-	LastSeen                 time.Time         `json:"lastSeen"`
 	RotatedAt                time.Time         `json:"rotatedAt"`
 	Identity                 provider.Identity `json:"identity"`
 	ID                       string            `json:"id"`
@@ -41,7 +40,7 @@ type Session struct {
 	PreviousRefreshTokenHash refreshTokenHash  `json:"previousRefreshTokenHash"`
 }
 
-// A Sessions validates the session ID from the http request's session JWT against its data store.
+// Sessions validates the session ID from the http request's session JWT against its data store.
 // The session is refreshed each time the session JWT expires.  At this point, we generate a new refresh token.
 // The previous refresh token is still accepted for a short grace period after rotation, so concurrent requests carrying the same
 // expired JWT can all renew it.
@@ -85,7 +84,6 @@ func (m Sessions) CreateSession(ctx context.Context, identity provider.Identity,
 		RefreshSecret:    refreshSecret[:],
 		RefreshTokenHash: token.RefreshToken.hash(),
 		IssuedAt:         now,
-		LastSeen:         now,
 		UserAgent:        userAgent,
 	}
 	if err := m.put(ctx, token.Identity.Email, sessionID, session); err != nil {
@@ -117,10 +115,10 @@ func (m Sessions) Validate(ctx context.Context, token Token, r *http.Request) (T
 		return token, fmt.Errorf("failed to rotate refresh token: %w", err)
 	}
 
-	// update the last refresh time and the user agent in the store
-	// trade-off: ideally, we'd update these for each request. However, concurrent requests could lead to
-	// one request rotating the refresh token and then a second request writing back the old refresh token.
-	session.LastSeen = time.Now()
+	// update the user agent in the store
+	// trade-off: ideally, we'd update this (and a "last seen" timestamp) for each request. However,
+	// concurrent requests could lead to one request rotating the refresh token and then
+	// a second request writing back the old refresh token.
 	if r != nil {
 		session.UserAgent = r.Header.Get("User-Agent")
 	}

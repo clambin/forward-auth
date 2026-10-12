@@ -42,11 +42,15 @@ func handleListSessions(
 			return
 		}
 		response := make([]listSessionsResponseItem, len(sessions))
+		lastSeen := sessions[0].RotatedAt
+		if lastSeen.IsZero() {
+			lastSeen = sessions[0].IssuedAt
+		}
 		for i := range sessions {
 			response[i] = listSessionsResponseItem{
 				SessionID: sessions[i].ID,
 				Identity:  sessions[i].Identity,
-				LastSeen:  sessions[i].LastSeen,
+				LastSeen:  lastSeen,
 				UserAgent: sessions[i].UserAgent,
 			}
 		}
