@@ -3,7 +3,8 @@ on:
   push:
     branches:
       - main
-      - sec2
+      - refresh
+      - cycle
 permissions:
   contents: read
   packages: write

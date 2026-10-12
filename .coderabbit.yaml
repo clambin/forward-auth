@@ -1,0 +1,8 @@
+reviews:
+  profile: "assertive"
+  tools:
+    golangci-lint:
+      enabled: true
+      config_file: .golangci.yaml
+    eslint:
+      enabled: true # Automatically runs ESLint on JS changes

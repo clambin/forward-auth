@@ -1,16 +1,13 @@
 package server
 
 import (
-	"cmp"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
-	"time"
 
-	"github.com/clambin/forward-auth/internal/authn/provider"
-	"github.com/clambin/forward-auth/internal/sessions"
+	"github.com/clambin/forward-auth/internal/forwardauth"
 )
 
 const (
@@ -19,90 +16,105 @@ const (
 	forwardedUserGroupsHeader = "X-Forwarded-User-Groups"
 )
 
-// forwardAuthHandler is the main handler for the forward-auth middleware.
-// It authenticates the user by extracting the session cookie from the request and validating it against the session store.
-// If the session is missing/invalid, the user is redirected to the OIDC login page.
-// If the session is valid, the user is authorized and the request is forwarded to the original destination.
-func forwardAuthHandler(
+// handleForwardAuth is the main handler for the forward-auth middleware.
+// It authenticates the user by validating the JWT token in the session cookie:
+// - If the token has expired, the token manager attempts to refresh the token.
+// - If the token is invalid, or could not be refreshed, the user is redirected to the OIDC login page to create a new session.
+// Once the user is authenticated, the request is authorized and the request is forwarded to the original destination.
+func handleForwardAuth(
+	cookieName string,
+	key []byte,
+	domain string,
+	handler *forwardauth.Handler,
 	authenticator Authenticator,
-	authorizer Authorizer,
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// restore the original request method and URL
-		_, u := originalRequest(r)
+		// restore original request
+		originalMethod, originalURL, err := forwardauth.OriginalRequest(r)
+		if err != nil {
+			logger.Error("failed to restore original request", slog.Any("err", err))
+			http.Error(w, "failed to restore original request", http.StatusInternalServerError)
+			return
+		}
 
-		// get the session added by the session validator middleware
-		_, session, ok := sessions.UserSessionFromCtx(r.Context())
+		// request logger
+		reqLogger := logger.With(
+			//slog.String("reqID", uuid.New().String()),
+			slog.Group("request",
+				slog.String("method", originalMethod),
+				slog.String("url", originalURL.String()),
+			),
+		)
 
-		// no valid session cookie found: redirect to login page
-		if !ok {
-			logger.Warn("rejecting request: no valid session found", slog.String("url", u.String()))
-			redirectURL, err := authenticator.InitiateLogin(r.Context(), u.String())
+		redirectToLogin := func(originalURL *url.URL) {
+			redirectURL, err := authenticator.InitiateLogin(r.Context(), originalURL.String())
 			if err != nil {
-				logger.Warn("failed to generate redirect URL", slog.Any("err", err))
-				http.Error(w, "failed to redirect to login page", http.StatusInternalServerError)
+				reqLogger.Error("failed to initiate login", slog.Any("err", err))
+				http.Error(w, "failed to initiate login", http.StatusInternalServerError)
 				return
 			}
 			http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		}
+
+		// get the jwt token
+		cookie, err := r.Cookie(cookieName)
+		if err != nil {
+			reqLogger.Debug("no token in cookie")
+			redirectToLogin(originalURL)
+			return
+		}
+		signedToken := cookie.Value
+		token, err := forwardauth.ParseToken(signedToken, key)
+		if err != nil {
+			reqLogger.Error("invalid token in cookie", slog.Any("err", err))
+			redirectToLogin(originalURL)
 			return
 		}
 
-		// session is valid. check if the user is authorized to access the requested resource
-		if !authorizer.Allow(u, session.UserInfo.Email) {
-			logger.Warn("rejecting request: user is not authorized to access the requested resource",
-				slog.String("url", u.String()),
-				slog.String("user", session.UserInfo.Email),
-			)
-			http.Error(w, "user is not authorized to access the requested resource", http.StatusForbidden)
+		result, newToken, err := handler.Validate(r.Context(), token, r)
+		if err != nil {
+			reqLogger.Error("failed to validate token", slog.Any("err", err))
+			http.Error(w, "failed to validate token", http.StatusInternalServerError)
 			return
 		}
 
-		// valid session cookie found, request authorized: accept the request
-		setUserHeaders(w, session.UserInfo, authorizer.GroupsForUser(session.UserInfo.Email))
+		if result == forwardauth.NotAuthenticated {
+			// no valid session. redirect user to the login page
+			redirectToLogin(originalURL)
+			return
+		}
+
+		if result == forwardauth.Forbidden {
+			// authorizer refused access to the resource
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
+		// if the token was updated, resign the token
+		if newToken.ID != token.ID {
+			if signedToken, err = newToken.Sign(key); err != nil {
+				reqLogger.Error("failed to sign token", slog.Any("err", err))
+				http.Error(w, "failed to sign token", http.StatusInternalServerError)
+				return
+			}
+			setTokenCookie(w, cookieName, signedToken, domain)
+		}
+
+		setUserHeaders(w, token, handler.GroupsForUser(token.Identity.Email))
 		w.WriteHeader(http.StatusOK)
 	})
 }
 
-// originalRequest restores the original request method and URL from the Traefik forwardAuthrequest headers.
-// This allows us to route forwardAuth requests vs. logout requests (/_oauth/logout) to the correct handler.
-func originalRequest(r *http.Request) (string, *url.URL) {
-	path := cmp.Or(r.Header.Get("X-Forwarded-Uri"), "/")
-	var rawQuery string
-	if n := strings.Index(path, "?"); n > 0 {
-		rawQuery = path[n+1:]
-		path = path[:n]
-	}
-
-	return cmp.Or(r.Header.Get("X-Forwarded-Method"), http.MethodGet), &url.URL{
-		Scheme:   cmp.Or(r.Header.Get("X-Forwarded-Proto"), "https"),
-		Host:     r.Header.Get("X-Forwarded-Host"),
-		Path:     path,
-		RawQuery: rawQuery,
-	}
-}
-
-// setUserHeaders sets the user headers on the response. Blank headers are not set.
-func setUserHeaders(w http.ResponseWriter, user provider.Identity, groups []string) {
-	h := w.Header()
-	h.Set(forwardedUserEmailHeader, user.Email)
-	if user.Name != "" {
-		h.Set(forwardedUserNameHeader, user.Name)
-	}
-	if len(groups) > 0 {
-		slices.Sort(groups)
-		w.Header().Set(forwardedUserGroupsHeader, strings.Join(groups, ","))
-	}
-}
-
-// loginHandler is called by the OICD provider after the user has logged in.
-// It registers the session in the session store and redirects the user to the original destination.
+// handleLogin is called by the OICD provider after the user has logged in.
+// It establishes a session through a JWT token and redirects the user to the original destination.
 // This will trigger another call to forwardAuthHandler, which authenticates the user and authorizes the request.
-func loginHandler(
+func handleLogin(
 	cookieName string,
+	key []byte,
 	domain string,
+	handler *forwardauth.Handler,
 	authenticator Authenticator,
-	mgr *sessions.UserSessionManager,
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -127,25 +139,50 @@ func loginHandler(
 		ulog := logger.With(slog.String("user", userInfo.Email))
 		ulog.Debug("user validated successfully")
 
-		// create a session in the session cache
-		sessionID, err := mgr.Add(r.Context(), userInfo, r.UserAgent())
+		// create a token for the new session
+		tok, err := handler.CreateSession(r.Context(), userInfo, r)
 		if err != nil {
-			ulog.Warn("rejecting login request: failed to create session", slog.Any("err", err))
+			ulog.Error("failed to create token", slog.Any("err", err))
 			http.Error(w, "failed to create session", http.StatusInternalServerError)
 			return
 		}
 
-		http.SetCookie(w, &http.Cookie{
-			Name:     cookieName,
-			Value:    sessionID.String(),
-			Domain:   domain,
-			Path:     "/",
-			Expires:  time.Now().Add(mgr.TTL()),
-			Secure:   true,
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-		})
+		signedToken, err := tok.Sign(key)
+		if err != nil {
+			ulog.Error("failed to sign token", slog.Any("err", err))
+			http.Error(w, "failed to create session", http.StatusInternalServerError)
+			return
+		}
+
+		setTokenCookie(w, cookieName, signedToken, domain)
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 		ulog.Info("login successful")
 	})
+}
+
+// setTokenCookie adds a signed token cookie on the response.
+func setTokenCookie(w http.ResponseWriter, cookieName, signedToken, domain string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:   cookieName,
+		Value:  signedToken,
+		Domain: domain,
+		Path:   "/",
+		//Expires:  time.Now().Add(tokenManager.TTL()), // leaving this out so the browser sends an expired cookie
+		Secure:   true,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// setUserHeaders sets the user headers on the response. Blank headers are not set.
+func setUserHeaders(w http.ResponseWriter, token forwardauth.Token, groups []string) {
+	h := w.Header()
+	h.Set(forwardedUserEmailHeader, token.Identity.Email)
+	if token.Identity.Name != "" {
+		h.Set(forwardedUserNameHeader, token.Identity.Name)
+	}
+	if len(groups) > 0 {
+		slices.Sort(groups)
+		w.Header().Set(forwardedUserGroupsHeader, strings.Join(groups, ","))
+	}
 }

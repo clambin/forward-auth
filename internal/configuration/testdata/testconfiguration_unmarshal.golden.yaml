@@ -1,6 +1,7 @@
 server:
   addr: :8080
   cookieName: forward-auth-session
+  key: my-token-signing-key
   domain: ""
 logger:
   level: info

@@ -10,22 +10,22 @@ import (
 	"github.com/clambin/forward-auth/internal/authn"
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/clambin/forward-auth/internal/configuration"
-	"github.com/clambin/forward-auth/internal/server/middleware"
-	"github.com/clambin/forward-auth/internal/sessions"
+	"github.com/clambin/forward-auth/internal/forwardauth"
+	"github.com/clambin/forward-auth/internal/observability"
 	"github.com/stretchr/testify/require"
 )
 
+// TestServer only tests if all the routes reach the right handler
 func TestServer(t *testing.T) {
 	// verify that each target reaches the right handler
 	cfg := configuration.DefaultConfiguration
 	cfg.Authn.Provider.Type = "github"
-	s, err := sessions.New(5*time.Minute, cfg.Storage)
+	handler, err := forwardauth.New(5*time.Minute, &authz.Authorizer{Rules: cfg.Authz.Rules, Groups: cfg.Authz.Groups}, cfg.Storage)
 	require.NoError(t, err)
 	an, err := authn.New(t.Context(), cfg)
 	require.NoError(t, err)
-	az := authz.Authorizer{Rules: cfg.Authz.Rules, Groups: cfg.Authz.Groups}
 
-	h := New(cfg.Server, s, an, &az, nil, middleware.GetMetrics(), slog.New(slog.DiscardHandler))
+	h := New(cfg.Server, handler, an, nil, observability.GetMetrics(), slog.New(slog.DiscardHandler))
 
 	// forward-auth
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/forwardauth", nil)
@@ -49,5 +49,5 @@ func TestServer(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/api/sessions/list", nil)
 	resp = httptest.NewRecorder()
 	h.ServeHTTP(resp, req)
-	require.Equal(t, http.StatusUnauthorized, resp.Code)
+	require.Equal(t, http.StatusForbidden, resp.Code)
 }

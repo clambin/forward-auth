@@ -4,6 +4,8 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+
+	"github.com/clambin/forward-auth/internal/server/web/anticache"
 )
 
 //go:embed static
@@ -14,15 +16,10 @@ func New() http.Handler {
 	if err != nil {
 		panic(err)
 	}
-	h := http.FileServer(http.FS(sub))
 
-	/*
-		// this prevents cloudflare from caching the static files while we're in active development.
-		h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Cache-Control", "no-store")
-			h.ServeHTTP(w, r)
-		})
-	*/
-
+	h, err := anticache.New(sub, "index.html")
+	if err != nil {
+		panic(err)
+	}
 	return h
 }

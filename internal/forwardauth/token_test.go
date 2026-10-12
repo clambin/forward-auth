@@ -1,0 +1,130 @@
+package forwardauth
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"testing"
+	"time"
+	"uuid"
+
+	"github.com/clambin/forward-auth/internal/authn/provider"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestToken(t *testing.T) {
+	const secret = "secret"
+	// generate a token
+	token := generateToken("my-session-id", provider.Identity{Email: "test@example.com"})
+
+	// produce signed JWT token
+	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, token)
+	raw, err := jwtToken.SignedString([]byte(secret))
+	require.NoError(t, err)
+
+	// verify the token
+	token2, err := ParseToken(raw, []byte(secret))
+	require.NoError(t, err)
+
+	assert.Equal(t, token.SessionID, token2.SessionID)
+	assert.Equal(t, token.Identity.Email, token2.Identity.Email)
+	assert.Equal(t, token.RefreshToken, token2.RefreshToken)
+	assert.Equal(t, token.ExpiresAt.Unix(), token2.ExpiresAt.Unix())
+	assert.False(t, token2.Expired())
+}
+
+func TestParseToken(t *testing.T) {
+	var signingKey = []byte("secret")
+	makeToken := func(expiration time.Duration) string {
+		tok := generateToken(uuid.New().String(), provider.Identity{Email: "test@example.com"})
+		tok.ExpiresAt = jwt.NewNumericDate(time.Now().Add(expiration))
+		raw, err := tok.Sign(signingKey)
+		require.NoError(t, err)
+		return raw
+	}
+	fakeToken := func(claims jwt.MapClaims) string {
+		tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		raw, err := tok.SignedString(signingKey)
+		require.NoError(t, err)
+		return raw
+	}
+
+	tests := []struct {
+		name        string
+		input       string
+		secret      []byte
+		wantErr     require.ErrorAssertionFunc
+		wantExpired assert.BoolAssertionFunc
+	}{
+		{"valid token", makeToken(15 * time.Minute), signingKey, require.NoError, assert.False},
+		{"invalid signature", makeToken(14 * time.Minute), []byte("bad-key"), require.Error, assert.False},
+		{"expired token", makeToken(-15 * time.Minute), signingKey, require.NoError, assert.True},
+		{"invalid token", "this-is-not-a-token", signingKey, require.Error, assert.False},
+		{"empty token", fakeToken(nil), signingKey, require.Error, assert.False},
+		{"fake token", fakeToken(jwt.MapClaims{"iss": tokenIssuer}), signingKey, require.Error, assert.False},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			token, err := ParseToken(tt.input, tt.secret)
+			tt.wantErr(t, err)
+			if err != nil {
+				return
+			}
+			tt.wantExpired(t, token.Expired())
+		})
+	}
+}
+
+func TestRefreshToken_next(t *testing.T) {
+	refreshToken := generateRefreshToken()
+	secret := []byte("secret")
+
+	// next is deterministic for the same token and secret
+	next := refreshToken.next(secret)
+	assert.Equal(t, next, refreshToken.next(secret))
+	assert.NotEqual(t, refreshToken, next)
+	// a different secret yields a different successor
+	assert.NotEqual(t, next, refreshToken.next([]byte("other secret")))
+}
+
+func TestRefreshTokenHash_JSON(t *testing.T) {
+	refreshToken := generateRefreshToken()
+	hash := refreshToken.hash()
+
+	b, err := json.Marshal(hash)
+	require.NoError(t, err)
+
+	var read refreshTokenHash
+	require.NoError(t, json.Unmarshal(b, &read))
+	require.Equal(t, hash, read)
+}
+
+func TestRefreshToken_hash(t *testing.T) {
+	refreshToken := RefreshToken(bytes.Repeat([]byte{0}, 32)) //generateRefreshToken()
+	want := refreshTokenHash(sha256.Sum256(refreshToken[:]))
+
+	assert.Equal(t, want, refreshToken.hash())
+	assert.Equal(t, "66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925", hex.EncodeToString(want[:]))
+}
+
+func TestToken_Expired(t *testing.T) {
+	tests := []struct {
+		name    string
+		token   Token
+		expired assert.BoolAssertionFunc
+	}{
+		{"valid", Token{ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(time.Hour)}}, assert.False},
+		{"expired", Token{ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(-time.Hour)}}, assert.True},
+		{"null", Token{}, assert.True},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.expired(t, tt.token.Expired())
+		})
+	}
+}

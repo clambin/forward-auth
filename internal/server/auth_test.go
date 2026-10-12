@@ -15,23 +15,24 @@ import (
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/configuration"
-	"github.com/clambin/forward-auth/internal/sessions"
+	"github.com/clambin/forward-auth/internal/forwardauth"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestForwardAuthHandler(t *testing.T) {
+func TestHandleForwardAuth(t *testing.T) {
 	tests := []struct {
-		name        string
-		withSession bool
-		allow       bool
-		wantCode    int
+		name      string
+		withToken bool
+		delta     time.Duration
+		allow     bool
+		wantCode  int
 	}{
-		{"no session", false, true, http.StatusSeeOther},
-		{"invalid session", false, true, http.StatusSeeOther},
-		{"valid session, not allowed", true, false, http.StatusForbidden},
-		{"valid session, allowed", true, true, http.StatusOK},
+		{"missing token", false, 0, true, http.StatusSeeOther},
+		{"valid session, not allowed", true, 0, false, http.StatusForbidden},
+		{"valid session, allowed", true, 0, true, http.StatusOK},
+		{"valid expired jwt", true, -time.Hour, true, http.StatusOK},
 	}
 
 	for _, tt := range tests {
@@ -39,39 +40,87 @@ func TestForwardAuthHandler(t *testing.T) {
 			const cookieName = "test"
 			var fAuthn fakeAuthenticator
 			fAuthz := fakeAuthorizer{allow: tt.allow}
-			mgr, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
+			handler, _ := forwardauth.New(time.Hour, &fAuthz, configuration.StorageConfiguration{})
 
-			s := New(
-				configuration.ServerConfiguration{CookieName: cookieName, Domain: "example.com"},
-				mgr,
+			h := handleForwardAuth(
+				cookieName,
+				[]byte("my-signing-key"),
+				".example.com",
+				handler,
 				&fAuthn,
-				&fAuthz,
-				&fakeRedisClient{},
-				&fakeMetrics{},
 				slog.New(slog.DiscardHandler),
 			)
 
-			req := forwardAuthRequest("/")
-			if tt.withSession {
-				sessionID, err := mgr.Add(t.Context(), provider.Identity{Email: "foo@example.com"}, "")
+			req := forwardAuthRequest("https://example.com/?mode=true")
+			if tt.withToken {
+				tok, err := handler.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, req)
 				require.NoError(t, err)
-				req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID.String()})
+				tok.ExpiresAt.Time = tok.ExpiresAt.Add(tt.delta)
+				rawToken, err := tok.Sign([]byte("my-signing-key"))
+				require.NoError(t, err)
+				req.AddCookie(&http.Cookie{Name: cookieName, Value: rawToken})
 			}
 			resp := httptest.NewRecorder()
-			s.ServeHTTP(resp, req)
+			h.ServeHTTP(resp, req)
 			assert.Equal(t, tt.wantCode, resp.Code)
 		})
 	}
 }
 
-func forwardAuthRequest(s string) *http.Request {
-	u, _ := url.Parse(s)
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/forwardauth", nil)
-	req.Header.Set("X-Forwarded-Uri", u.Path)
-	req.Header.Set("X-Forwarded-Proto", u.Scheme)
-	req.Header.Set("X-Forwarded-Host", u.Host)
-	req.Header.Set("X-Forwarded-Method", http.MethodGet)
-	return req
+// TestHandleForwardAuth_InvalidCookie handles a request with an invalid cookie.
+// Separate test because it didn't fit in the table-driven TestHandleForwardAuth.
+func TestHandleForwardAuth_InvalidCookie(t *testing.T) {
+	handler, _ := forwardauth.New(time.Hour, &fakeAuthorizer{allow: true}, configuration.StorageConfiguration{})
+
+	h := handleForwardAuth(
+		"forward-auth",
+		[]byte("my-signing-key"),
+		".example.com",
+		handler,
+		&fakeAuthenticator{
+			states: make(map[string]string),
+			codes:  make(map[string]struct{}),
+		},
+		slog.New(slog.DiscardHandler),
+	)
+	req := forwardAuthRequest("/")
+	req.AddCookie(&http.Cookie{Name: "forward-auth", Value: "invalid-cookie"})
+	resp := httptest.NewRecorder()
+	h.ServeHTTP(resp, req)
+	assert.Equal(t, http.StatusSeeOther, resp.Code)
+	assert.NotEmpty(t, resp.Header().Get("Location"))
+}
+
+// TestHandleForwardAuth_NoSession validates that a request with a valid cookie for a deleted session is rejected.
+func TestHandleForwardAuth_NoSession(t *testing.T) {
+	const cookieName = "test"
+	var fAuthn fakeAuthenticator
+	fAuthz := fakeAuthorizer{allow: true}
+	handler, _ := forwardauth.New(time.Hour, &fAuthz, configuration.StorageConfiguration{})
+
+	h := handleForwardAuth(
+		cookieName,
+		[]byte("my-signing-key"),
+		".example.com",
+		handler,
+		&fAuthn,
+		slog.New(slog.DiscardHandler),
+	)
+
+	req := forwardAuthRequest("https://example.com/?mode=true")
+
+	tok, err := handler.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, req)
+	require.NoError(t, err)
+	rawToken, err := tok.Sign([]byte("my-signing-key"))
+	require.NoError(t, err)
+	req.AddCookie(&http.Cookie{Name: cookieName, Value: rawToken})
+
+	_ = handler.DeleteSession(t.Context(), "foo@example.com", tok.SessionID)
+
+	resp := httptest.NewRecorder()
+	h.ServeHTTP(resp, req)
+	assert.Equal(t, http.StatusSeeOther, resp.Code)
+	assert.Contains(t, resp.Header().Get("Location"), "https://oicd.example.com/_oauth?code=")
 }
 
 func TestForwardAuthHandler_Headers(t *testing.T) {
@@ -94,26 +143,31 @@ func TestForwardAuthHandler_Headers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			const cookieName = "test"
-			var fAuthn fakeAuthenticator
-			fAuthz := fakeAuthorizer{allow: true, groups: tt.groups}
-			mgr, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
+			handler, _ := forwardauth.New(5*time.Minute, &fakeAuthorizer{allow: true, groups: tt.groups}, configuration.StorageConfiguration{})
 
-			s := New(
-				configuration.ServerConfiguration{CookieName: cookieName, Domain: "example.com"},
-				mgr,
-				&fAuthn,
-				&fAuthz,
-				&fakeRedisClient{},
-				&fakeMetrics{},
+			h := handleForwardAuth(
+				cookieName,
+				[]byte("my-signing-key"),
+				".example.com",
+				handler,
+				&fakeAuthenticator{
+					states: make(map[string]string),
+					codes:  make(map[string]struct{}),
+				},
+
 				slog.New(slog.DiscardHandler),
 			)
 
 			req := forwardAuthRequest("/")
-			sessionID, err := mgr.Add(t.Context(), tt.userInfo, "")
+
+			token, err := handler.CreateSession(t.Context(), tt.userInfo, req)
 			require.NoError(t, err)
-			req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID.String()})
+			rawToken, err := token.Sign([]byte("my-signing-key"))
+			require.NoError(t, err)
+			req.AddCookie(&http.Cookie{Name: cookieName, Value: rawToken})
+
 			resp := httptest.NewRecorder()
-			s.ServeHTTP(resp, req)
+			h.ServeHTTP(resp, req)
 			require.Equal(t, http.StatusOK, resp.Code)
 
 			require.Equal(t, tt.want.name, resp.Header().Get(forwardedUserNameHeader))
@@ -125,42 +179,42 @@ func TestForwardAuthHandler_Headers(t *testing.T) {
 
 func BenchmarkForwardAuthHandler(b *testing.B) {
 	// Current:
-	// BenchmarkForwardAuthHandler-10    	   10123	    118111 ns/op	  333603 B/op	    2300 allocs/op
+	// BenchmarkForwardAuthHandler-10    	  267277	      4484 ns/op	    5934 B/op	      69 allocs/op
+	// Without reqID:
+	// BenchmarkForwardAuthHandler-10    	  283459	      4219 ns/op	    5757 B/op	      66 allocs/op
 	const cookieName = "test"
 	var fAuthn fakeAuthenticator
-	fAuthz := fakeAuthorizer{allow: true}
-	mgr, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
-
+	handler, _ := forwardauth.New(time.Hour, &fakeAuthorizer{allow: true}, configuration.StorageConfiguration{})
 	s := New(
-		configuration.ServerConfiguration{CookieName: cookieName, Domain: ".example.com"},
-		mgr,
+		configuration.ServerConfiguration{CookieName: cookieName, Key: "secret", Domain: ".example.com"},
+		handler,
 		&fAuthn,
-		&fAuthz,
 		&fakeRedisClient{},
 		&fakeMetrics{},
 		slog.New(slog.DiscardHandler),
 	)
 
-	sessionID, err := mgr.Add(b.Context(), provider.Identity{Email: "foo@example.com"}, "")
-	require.NoError(b, err)
-	cookie := http.Cookie{Name: cookieName, Value: sessionID.String()}
 	req := forwardAuthRequest("/")
+	tok, err := handler.CreateSession(b.Context(), provider.Identity{Email: "foo@example.com"}, req)
+	require.NoError(b, err)
+	rawToken, _ := tok.Sign([]byte("secret"))
+	require.NoError(b, err)
+	cookie := http.Cookie{Name: cookieName, Value: rawToken}
 	req.AddCookie(&cookie)
 
 	b.ResetTimer()
 	b.ReportAllocs()
 	for b.Loop() {
-		for range 100 {
-			resp := httptest.NewRecorder()
-			s.ServeHTTP(resp, req.Clone(b.Context()))
-			if resp.Code != http.StatusOK {
-				b.Fatal("should be OK")
-			}
+		reqC := req.Clone(b.Context())
+		resp := httptest.NewRecorder()
+		s.ServeHTTP(resp, reqC)
+		if resp.Code != http.StatusOK {
+			b.Fatal("should be OK")
 		}
 	}
 }
 
-func TestLoginHandler(t *testing.T) {
+func TestHandleLogin(t *testing.T) {
 	type want struct {
 		code     int
 		location string
@@ -199,8 +253,15 @@ func TestLoginHandler(t *testing.T) {
 				codes:  map[string]struct{}{"1234": {}},
 			}
 			const cookieName = "test"
-			mgr, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
-			h := loginHandler(cookieName, ".example.com", &fa, mgr, slog.New(slog.DiscardHandler))
+			handler, _ := forwardauth.New(time.Hour, nil, configuration.StorageConfiguration{})
+			h := handleLogin(
+				cookieName,
+				[]byte("secret"),
+				".example.com",
+				handler,
+				&fa,
+				slog.New(slog.DiscardHandler),
+			)
 
 			req := httptest.NewRequest(http.MethodGet, "/api/auth/login?"+tt.args.Encode(), nil)
 			resp := httptest.NewRecorder()
@@ -219,6 +280,22 @@ func TestLoginHandler(t *testing.T) {
 		})
 	}
 }
+
+func forwardAuthRequest(s string) *http.Request {
+	u, _ := url.Parse(s)
+	path := u.Path
+	if u.RawQuery != "" {
+		path += "?" + u.RawQuery
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/forwardauth", nil)
+	req.Header.Set("X-Forwarded-Uri", path)
+	req.Header.Set("X-Forwarded-Proto", u.Scheme)
+	req.Header.Set("X-Forwarded-Host", u.Host)
+	req.Header.Set("X-Forwarded-Method", http.MethodGet)
+	return req
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 var _ Authenticator = (*fakeAuthenticator)(nil)
 
