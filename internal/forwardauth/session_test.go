@@ -16,7 +16,7 @@ import (
 
 func TestManager(t *testing.T) {
 	ctx := t.Context()
-	c, err := tcredis.Run(ctx, "ghcr.io/valkey-io/valkey:latest")
+	c, err := tcredis.Run(ctx, "redis:8.10.2")
 	require.NoError(t, err)
 	endpoint, err := c.Endpoint(ctx, "")
 	require.NoError(t, err)

@@ -54,7 +54,10 @@ func (h *Handler) Validate(ctx context.Context, token Token, r *http.Request) (R
 		return Error, token, err
 	}
 	// authorize the request
-	_, requestURL := OriginalRequest(r)
+	_, requestURL, err := OriginalRequest(r)
+	if err != nil {
+		return Error, newToken, err
+	}
 	if !h.Allow(requestURL, newToken.Identity.Email) {
 		return Forbidden, newToken, nil
 	}
@@ -63,19 +66,14 @@ func (h *Handler) Validate(ctx context.Context, token Token, r *http.Request) (R
 
 // OriginalRequest restores the original request method and URL from the Traefik forwardAuthrequest headers.
 // This allows us to route forwardAuth requests vs. logout requests (/_oauth/logout) to the correct handler.
-func OriginalRequest(r *http.Request) (string, *url.URL) {
+func OriginalRequest(r *http.Request) (string, *url.URL, error) {
 	path := cmp.Or(r.Header.Get("X-Forwarded-Uri"), "/")
 
-	var rawQuery string
-	if u, err := url.ParseRequestURI(path); err == nil {
-		path = u.Path
-		rawQuery = u.RawQuery
+	u, err := url.ParseRequestURI(path)
+	if err == nil {
+		u.Scheme = cmp.Or(r.Header.Get("X-Forwarded-Proto"), "https")
+		u.Host = r.Header.Get("X-Forwarded-Host")
 	}
 
-	return cmp.Or(r.Header.Get("X-Forwarded-Method"), http.MethodGet), &url.URL{
-		Scheme:   cmp.Or(r.Header.Get("X-Forwarded-Proto"), "https"),
-		Host:     r.Header.Get("X-Forwarded-Host"),
-		Path:     path,
-		RawQuery: rawQuery,
-	}
+	return cmp.Or(r.Header.Get("X-Forwarded-Method"), http.MethodGet), u, err
 }

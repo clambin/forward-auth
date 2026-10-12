@@ -134,7 +134,7 @@ func TestOriginalRequest(t *testing.T) {
 		{
 			name:    "encoded path",
 			headers: map[string]string{"X-Forwarded-Uri": "/files/a%2Fb", "X-Forwarded-Host": "example.com"},
-			want:    want{http.MethodGet, "https://example.com/files/a/b"},
+			want:    want{http.MethodGet, "https://example.com/files/a%2Fb"},
 		},
 		{
 			name:    "arguments",
@@ -150,7 +150,8 @@ func TestOriginalRequest(t *testing.T) {
 				req.Header.Set(k, v)
 			}
 
-			method, path := forwardauth.OriginalRequest(req)
+			method, path, err := forwardauth.OriginalRequest(req)
+			require.NoError(t, err)
 			assert.Equal(t, tt.want.method, method)
 			assert.Equal(t, tt.want.path, path.String())
 		})

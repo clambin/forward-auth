@@ -31,7 +31,12 @@ func handleForwardAuth(
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// restore original request
-		originalMethod, originalURL := forwardauth.OriginalRequest(r)
+		originalMethod, originalURL, err := forwardauth.OriginalRequest(r)
+		if err != nil {
+			logger.Error("failed to restore original request", slog.Any("err", err))
+			http.Error(w, "failed to restore original request", http.StatusInternalServerError)
+			return
+		}
 
 		// request logger
 		reqLogger := logger.With(
