@@ -2,6 +2,7 @@ package forwardauth
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -20,7 +21,7 @@ func TestSessions(t *testing.T) {
 	require.NoError(t, err)
 	endpoint, err := c.Endpoint(ctx, "")
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = c.Terminate(ctx) })
+	t.Cleanup(func() { _ = c.Terminate(context.Background()) })
 
 	tests := []struct {
 		name string

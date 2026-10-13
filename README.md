@@ -277,8 +277,7 @@ storage:
 
 session:
   # Session lifetime. Default: 24h. 
-  # The session is deleted from the store if the JWT hasn't been renewed within this time.
-  # After that, the user needs to log in again.
+  # The session is invalidated after this time, and the user needs to log in again.
   session_ttl: 24h
 ```
 

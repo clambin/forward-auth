@@ -54,7 +54,7 @@ func (h *Handler) Validate(ctx context.Context, token Token, r *http.Request) (T
 		return newToken, fmt.Errorf("failed to parse requested URL: %w", err)
 	}
 	if !h.Allow(requestURL, newToken.Identity.Email) {
-		return Token{}, ErrNotAllowed
+		return newToken, ErrNotAllowed
 	}
 	return newToken, nil
 }
