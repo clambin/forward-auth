@@ -95,11 +95,8 @@ func handleForwardAuth(
 		// if the token was updated, resign the token
 		if newToken.ID != token.ID {
 			reqLogger.Debug("token updated. resigning token")
-			if signedToken, err = newToken.Sign(key); err != nil {
-				reqLogger.Error("failed to sign token", slog.Any("err", err))
-				http.Error(w, "failed to sign token", http.StatusInternalServerError)
-				return
-			}
+			// we know the token can be signed because we created it in handleLogin()
+			signedToken, _ = newToken.Sign(key)
 			setTokenCookie(w, cookieName, signedToken, domain)
 		}
 

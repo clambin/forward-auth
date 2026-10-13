@@ -16,10 +16,9 @@ import (
 )
 
 func TestSessions(t *testing.T) {
-	ctx := t.Context()
-	c, err := tcredis.Run(ctx, "redis:8.10.2")
+	c, err := tcredis.Run(t.Context(), "redis:8.10.2")
 	require.NoError(t, err)
-	endpoint, err := c.Endpoint(ctx, "")
+	endpoint, err := c.Endpoint(t.Context(), "")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = c.Terminate(context.Background()) })
 
@@ -34,6 +33,7 @@ func TestSessions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
 			req, _ := http.NewRequest(http.MethodGet, "/", nil)
 			req.Header.Set("User-Agent", "test")
 

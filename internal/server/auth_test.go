@@ -22,17 +22,89 @@ import (
 )
 
 func TestHandleForwardAuth(t *testing.T) {
+	validKey := []byte("valid-key")
+	type generateTokenFunc func(tb testing.TB, h *forwardauth.Handler, req *http.Request) string
+	// generateToken generates a token, signed by key, with a delta time added to the expiration time
+	generateToken := func(key []byte, delta time.Duration) func(tb testing.TB, h *forwardauth.Handler, req *http.Request) string {
+		return func(tb testing.TB, h *forwardauth.Handler, req *http.Request) string {
+			tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, req)
+			require.NoError(tb, err)
+			tok.ExpiresAt.Time = tok.ExpiresAt.Add(delta)
+			rawToken, err := tok.Sign(key)
+			require.NoError(tb, err)
+			return rawToken
+		}
+	}
+
 	tests := []struct {
-		name      string
-		withToken bool
-		delta     time.Duration
-		allow     bool
-		wantCode  int
+		name  string
+		token generateTokenFunc
+		allow bool
+		want  int
 	}{
-		{"missing token", false, 0, true, http.StatusSeeOther},
-		{"valid session, not allowed", true, 0, false, http.StatusForbidden},
-		{"valid session, allowed", true, 0, true, http.StatusOK},
-		{"valid expired jwt", true, -time.Hour, true, http.StatusOK},
+		{
+			name:  "valid session, allowed",
+			token: generateToken(validKey, 0),
+			allow: true,
+			want:  http.StatusOK,
+		},
+		{
+			name:  "valid expired jwt",
+			token: generateToken(validKey, -time.Hour),
+			allow: true,
+			want:  http.StatusOK,
+		},
+		{
+			name:  "invalid signature on jwt",
+			token: generateToken([]byte("wrong-key"), 0),
+			allow: true,
+			want:  http.StatusSeeOther,
+		},
+		{
+			name:  "missing token",
+			allow: true,
+			want:  http.StatusSeeOther,
+		},
+		{
+			name:  "valid session, not allowed",
+			token: generateToken(validKey, 0),
+			allow: false,
+			want:  http.StatusForbidden,
+		},
+		{
+			name: "invalid cookie",
+			token: func(tb testing.TB, h *forwardauth.Handler, req *http.Request) string {
+				return "invalid"
+			},
+			allow: true,
+			want:  http.StatusSeeOther,
+		},
+		{
+			name: "no session",
+			token: func(tb testing.TB, h *forwardauth.Handler, req *http.Request) string {
+				tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, req)
+				require.NoError(tb, err)
+				rawToken, err := tok.Sign(validKey)
+				require.NoError(tb, err)
+				require.NoError(tb, h.DeleteSession(t.Context(), tok.Identity.Email, tok.SessionID))
+				return rawToken
+			},
+			allow: true,
+			want:  http.StatusSeeOther,
+		},
+		{
+			name: "unrecognized refresh token",
+			token: func(tb testing.TB, h *forwardauth.Handler, req *http.Request) string {
+				tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, req)
+				require.NoError(tb, err)
+				tok.RefreshToken = forwardauth.RefreshToken{}
+				rawToken, err := tok.Sign(validKey)
+				require.NoError(tb, err)
+				return rawToken
+			},
+			allow: true,
+			want:  http.StatusSeeOther,
+		},
 	}
 
 	for _, tt := range tests {
@@ -44,7 +116,7 @@ func TestHandleForwardAuth(t *testing.T) {
 
 			h := handleForwardAuth(
 				cookieName,
-				[]byte("my-signing-key"),
+				validKey,
 				".example.com",
 				handler,
 				&fAuthn,
@@ -52,75 +124,18 @@ func TestHandleForwardAuth(t *testing.T) {
 			)
 
 			req := forwardAuthRequest("https://example.com/?mode=true")
-			if tt.withToken {
-				tok, err := handler.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, req)
-				require.NoError(t, err)
-				tok.ExpiresAt.Time = tok.ExpiresAt.Add(tt.delta)
-				rawToken, err := tok.Sign([]byte("my-signing-key"))
-				require.NoError(t, err)
-				req.AddCookie(&http.Cookie{Name: cookieName, Value: rawToken})
+			if tt.token != nil {
+				req.AddCookie(&http.Cookie{Name: cookieName, Value: tt.token(t, handler, req)})
 			}
 			resp := httptest.NewRecorder()
 			h.ServeHTTP(resp, req)
-			assert.Equal(t, tt.wantCode, resp.Code)
+			assert.Equal(t, tt.want, resp.Code)
+
+			if resp.Code == http.StatusSeeOther {
+				assert.Contains(t, resp.Header().Get("Location"), "https://oicd.example.com/_oauth?code=")
+			}
 		})
 	}
-}
-
-// TestHandleForwardAuth_InvalidCookie handles a request with an invalid cookie.
-// Separate test because it didn't fit in the table-driven TestHandleForwardAuth.
-func TestHandleForwardAuth_InvalidCookie(t *testing.T) {
-	handler, _ := forwardauth.New(time.Hour, &fakeAuthorizer{allow: true}, configuration.StorageConfiguration{})
-
-	h := handleForwardAuth(
-		"forward-auth",
-		[]byte("my-signing-key"),
-		".example.com",
-		handler,
-		&fakeAuthenticator{
-			states: make(map[string]string),
-			codes:  make(map[string]struct{}),
-		},
-		slog.New(slog.DiscardHandler),
-	)
-	req := forwardAuthRequest("/")
-	req.AddCookie(&http.Cookie{Name: "forward-auth", Value: "invalid-cookie"})
-	resp := httptest.NewRecorder()
-	h.ServeHTTP(resp, req)
-	assert.Equal(t, http.StatusSeeOther, resp.Code)
-	assert.NotEmpty(t, resp.Header().Get("Location"))
-}
-
-// TestHandleForwardAuth_NoSession validates that a request with a valid cookie for a deleted session is rejected.
-func TestHandleForwardAuth_NoSession(t *testing.T) {
-	const cookieName = "test"
-	var fAuthn fakeAuthenticator
-	fAuthz := fakeAuthorizer{allow: true}
-	handler, _ := forwardauth.New(time.Hour, &fAuthz, configuration.StorageConfiguration{})
-
-	h := handleForwardAuth(
-		cookieName,
-		[]byte("my-signing-key"),
-		".example.com",
-		handler,
-		&fAuthn,
-		slog.New(slog.DiscardHandler),
-	)
-
-	req := forwardAuthRequest("https://example.com/?mode=true")
-
-	tok, err := handler.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, req)
-	require.NoError(t, err)
-	rawToken, err := tok.Sign([]byte("my-signing-key"))
-	require.NoError(t, err)
-	req.AddCookie(&http.Cookie{Name: cookieName, Value: rawToken})
-
-	_ = handler.DeleteSession(t.Context(), "foo@example.com", tok.SessionID)
-
-	resp := httptest.NewRecorder()
-	h.ServeHTTP(resp, req)
-	assert.Equal(t, http.StatusSeeOther, resp.Code)
-	assert.Contains(t, resp.Header().Get("Location"), "https://oicd.example.com/_oauth?code=")
 }
 
 func TestForwardAuthHandler_Headers(t *testing.T) {
