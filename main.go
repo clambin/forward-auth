@@ -17,6 +17,7 @@ import (
 	"github.com/clambin/forward-auth/internal/forwardauth"
 	"github.com/clambin/forward-auth/internal/observability"
 	"github.com/clambin/forward-auth/internal/server"
+	"github.com/clambin/forward-auth/internal/server/healthcheck"
 	"github.com/goccy/go-yaml"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
@@ -58,7 +59,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	var redisClient server.RedisClient
+	var redisClient healthcheck.RedisClient
 	if cfg.Storage.Type == "redis" {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     cfg.Storage.Redis.Addr,
@@ -98,11 +99,20 @@ func main() {
 	g.Go(func() error {
 		return cfg.Prometheus.RunServer(ctx)
 	})
+	// Health Check
+	g.Go(func() error {
+		mux := http.NewServeMux()
+		mux.Handle(cfg.Health.Path, healthcheck.Handler(redisClient, logger.With("component", "healthcheck")))
+		return httputils.RunServer(ctx, &http.Server{
+			Addr:    cfg.Health.Addr,
+			Handler: mux,
+		})
+	})
 	// forward-auth
 	g.Go(func() error {
 		return httputils.RunServer(ctx, &http.Server{
 			Addr:    cfg.Server.Addr,
-			Handler: server.New(cfg.Server, handler, authenticator, redisClient, metrics, logger),
+			Handler: server.New(cfg.Server, handler, authenticator, metrics, logger),
 		})
 	})
 	if err = g.Wait(); err != nil {

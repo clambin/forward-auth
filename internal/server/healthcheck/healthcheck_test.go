@@ -1,15 +1,17 @@
-package server
+package healthcheck
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHealthCheck(t *testing.T) {
+func TestHandler(t *testing.T) {
 	tests := []struct {
 		name string
 		err  error
@@ -21,7 +23,7 @@ func TestHealthCheck(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := healthCheckHandler(
+			h := Handler(
 				fakeRedisClient{err: tt.err},
 				slog.New(slog.DiscardHandler),
 			)
@@ -32,4 +34,16 @@ func TestHealthCheck(t *testing.T) {
 			assert.Equal(t, tt.want, resp.Code)
 		})
 	}
+}
+
+var _ RedisClient = fakeRedisClient{}
+
+type fakeRedisClient struct {
+	err error
+}
+
+func (f fakeRedisClient) Ping(ctx context.Context) *redis.StatusCmd {
+	cmd := redis.NewStatusCmd(ctx)
+	cmd.SetErr(f.err)
+	return cmd
 }

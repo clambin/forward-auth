@@ -32,6 +32,10 @@ var DefaultConfiguration = Configuration{
 		Addr: ":9120",
 		Path: "/metrics",
 	},
+	Health: HealthConfiguration{
+		Addr: ":8888",
+		Path: "/healthz",
+	},
 	Authn: AuthnConfiguration{
 		StateTTL: 10 * time.Minute,
 		Provider: provider.Configuration{
@@ -54,6 +58,7 @@ type Configuration struct {
 	Server     ServerConfiguration     `yaml:"server"`
 	Logger     LoggerConfiguration     `yaml:"logger"`
 	Prometheus PrometheusConfiguration `yaml:"prometheus"`
+	Health     HealthConfiguration     `yaml:"health"`
 	Storage    StorageConfiguration    `yaml:"storage"`
 	Authz      AuthzConfiguration      `yaml:"authz"`
 	Authn      AuthnConfiguration      `yaml:"authn"`
@@ -114,6 +119,11 @@ func (c PrometheusConfiguration) RunServer(ctx context.Context) error {
 		Addr:    c.Addr,
 		Handler: mux,
 	})
+}
+
+type HealthConfiguration struct {
+	Addr string `yaml:"addr"`
+	Path string `yaml:"path"`
 }
 
 type AuthnConfiguration struct {

@@ -10,7 +10,6 @@ import (
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/forwardauth"
 	"github.com/clambin/forward-auth/internal/server/web"
-	"github.com/redis/go-redis/v9"
 )
 
 type Authenticator interface {
@@ -24,16 +23,11 @@ type Metrics interface {
 	InstrumentedHandler(label string) func(http.Handler) http.Handler
 }
 
-type RedisClient interface {
-	Ping(ctx context.Context) *redis.StatusCmd
-}
-
 // New returns a new http.Handler that serves all API endpoints and the web frontend.
 func New(
 	cfg configuration.ServerConfiguration,
 	handler *forwardauth.Handler,
 	authenticator Authenticator,
-	redisClient RedisClient,
 	metrics Metrics,
 	logger *slog.Logger,
 ) http.Handler {
@@ -70,7 +64,6 @@ func New(
 	)))
 
 	mux.Handle("/", web.New())
-	mux.Handle("/healthz", healthCheckHandler(redisClient, logger.With("handler", "healthCheck")))
 
 	return mux
 }
