@@ -29,26 +29,23 @@ func TestHandler_Refresh(t *testing.T) {
 		require.NoError(t, err)
 
 		// while the token doesn't expire, the session remains valid
-		result, currentToken, err := h.Validate(ctx, origToken, req)
+		currentToken, err := h.Validate(ctx, origToken, req)
 		require.NoError(t, err)
 		assert.Equal(t, origToken, currentToken)
-		assert.Equal(t, forwardauth.Allowed, result)
 
 		// when the token expires, but the session remains valid, the token is refreshed
 		for range 3 {
 			time.Sleep(20 * time.Minute)
-			result, newToken, err := h.Validate(ctx, currentToken, req)
+			newToken, err := h.Validate(ctx, currentToken, req)
 			require.NoError(t, err)
 			assert.NotEqual(t, currentToken, newToken)
-			assert.Equal(t, forwardauth.Allowed, result)
 			currentToken = newToken
 		}
 
 		// when the session expired, the token is not refreshed
 		time.Sleep(12 * time.Hour)
-		result, _, err = h.Validate(ctx, currentToken, req)
-		require.NoError(t, err)
-		assert.Equal(t, forwardauth.NotAuthenticated, result)
+		_, err = h.Validate(ctx, currentToken, req)
+		assert.ErrorIs(t, err, forwardauth.ErrSessionNotFound)
 	})
 }
 
@@ -64,18 +61,16 @@ func TestHandler_DeleteSession(t *testing.T) {
 	require.NoError(t, err)
 
 	// validate the token & session
-	result, _, err := h.Validate(ctx, token, req)
+	_, err = h.Validate(ctx, token, req)
 	require.NoError(t, err)
-	require.Equal(t, forwardauth.Allowed, result)
 
 	// delete the session
 	err = h.DeleteSession(ctx, token.Identity.Email, token.SessionID)
 	require.NoError(t, err)
 
 	// validation should now fail, even if the token is still valid
-	result, _, err = h.Validate(ctx, token, req)
-	require.NoError(t, err)
-	require.Equal(t, forwardauth.NotAuthenticated, result)
+	_, err = h.Validate(ctx, token, req)
+	require.ErrorIs(t, err, forwardauth.ErrSessionNotFound)
 }
 
 func TestHandler_Authorize(t *testing.T) {
@@ -83,11 +78,11 @@ func TestHandler_Authorize(t *testing.T) {
 		name  string
 		token bool
 		allow bool
-		want  forwardauth.Result
+		want  error
 	}{
-		{"allow", true, true, forwardauth.Allowed},
-		{"forbid", true, false, forwardauth.Forbidden},
-		{"no token", false, false, forwardauth.NotAuthenticated},
+		{"allow", true, true, nil},
+		{"forbid", true, false, forwardauth.ErrNotAllowed},
+		{"no token", false, false, forwardauth.ErrSessionNotFound},
 	}
 
 	for _, tt := range tests {
@@ -104,9 +99,8 @@ func TestHandler_Authorize(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			result, _, err := h.Validate(ctx, token, req)
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, result)
+			_, err = h.Validate(ctx, token, req)
+			assert.ErrorIs(t, err, tt.want)
 		})
 	}
 }

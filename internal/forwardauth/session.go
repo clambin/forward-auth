@@ -23,11 +23,6 @@ const (
 	subsystemKeyPrefix = "session"
 )
 
-var (
-	ErrSessionNotFound     = errors.New("session not found")
-	ErrInvalidRefreshToken = errors.New("invalid refresh token")
-)
-
 // A Session represents a user session on the server.
 type Session struct {
 	IssuedAt                 time.Time         `json:"issuedAt"`
@@ -92,9 +87,9 @@ func (m Sessions) CreateSession(ctx context.Context, identity provider.Identity,
 	return token, nil
 }
 
-// Validate validates that the session in the token exists in the store.  If found, Validate() updates
-// the user agent and the last refresh time in the store. It returns the updated token.
-func (m Sessions) Validate(ctx context.Context, token Token, r *http.Request) (Token, error) {
+// validateToken validates that the session in the token exists in the store.  If required, it refreshes the token
+// by rotating the refresh token. It returns the updated token.
+func (m Sessions) validateToken(ctx context.Context, token Token, r *http.Request) (Token, error) {
 	// if the session doesn't exist, it's an error
 	session, err := m.get(ctx, token.Identity.Email, token.SessionID)
 	if err != nil {
@@ -106,7 +101,7 @@ func (m Sessions) Validate(ctx context.Context, token Token, r *http.Request) (T
 		return token, nil
 	}
 
-	// either the token has expired, or the client is presenting a new refresh token (possibly the next rotated refresh token).
+	// either the token has expired, or the client is presenting a different refresh token (possibly the next rotated refresh token).
 	// create a new token, rotating the refresh token.
 	// rotateRefreshToken fails if the token's refresh token no longer matches the current or previous refresh token.
 
@@ -131,6 +126,9 @@ func (m Sessions) Validate(ctx context.Context, token Token, r *http.Request) (T
 // To protect against that, we keep track of the current refresh token and the previous refresh token.
 // When we rotate, and we see that the client is presenting the previous refresh token, we accept it for a short
 // period of time.
+//
+// Note that rotateRefreshToken does not update the session in the store. The caller does this
+// so it can be done atomically with the token update.
 func (m Sessions) rotateRefreshToken(token Token, session Session) (Token, Session, error) {
 	// we'll need to issue a new token. update the ID
 	token.ID = uuid.New().String()
@@ -339,17 +337,12 @@ func key(email string, sessionID string) string {
 		namespaceKeyPrefix,
 		subsystemKeyPrefix,
 		base64.StdEncoding.EncodeToString([]byte(email)), // base64 the email address, in case it contains cache glob characters or colons
-		sessionID, // uuid generated at the server. no need to base64 encode it
+		sessionID, // uuid generated at the server. no need to base64 it
 	}, ":")
 }
 
 func emailScanKey(email string, glob string) string {
-	return strings.Join([]string{
-		namespaceKeyPrefix,
-		subsystemKeyPrefix,
-		base64.StdEncoding.EncodeToString([]byte(email)),
-		glob,
-	}, ":")
+	return key(email, glob)
 }
 
 func fullScanKey(glob string) string {

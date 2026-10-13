@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -72,27 +73,25 @@ func handleForwardAuth(
 			return
 		}
 
-		result, newToken, err := handler.Validate(r.Context(), token, r)
-		if err != nil {
+		newToken, err := handler.Validate(r.Context(), token, r)
+		switch {
+		case errors.Is(err, forwardauth.ErrNotAllowed):
+			reqLogger.Debug("access forbidden")
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		case errors.Is(err, forwardauth.ErrInvalidRefreshToken):
+			reqLogger.Debug("invalid token. redirecting to login page")
+			redirectToLogin(originalURL)
+			return
+		case errors.Is(err, forwardauth.ErrSessionNotFound):
+			reqLogger.Debug("session not found. redirecting to login page")
+			redirectToLogin(originalURL)
+			return
+		case err != nil:
 			reqLogger.Error("failed to validate token", slog.Any("err", err))
 			http.Error(w, "failed to validate token", http.StatusInternalServerError)
 			return
 		}
-
-		if result == forwardauth.NotAuthenticated {
-			// no valid session. redirect user to the login page
-			reqLogger.Debug("no valid session. redirecting to login page")
-			redirectToLogin(originalURL)
-			return
-		}
-
-		if result == forwardauth.Forbidden {
-			// authorizer refused access to the resource
-			reqLogger.Debug("access forbidden")
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
-
 		// if the token was updated, resign the token
 		if newToken.ID != token.ID {
 			reqLogger.Debug("token updated. resigning token")

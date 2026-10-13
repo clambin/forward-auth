@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	refreshTokenByteSize = 32 // 256 bytes
+	refreshTokenByteSize = 32 // 256 bit
 	tokenExpiration      = 15 * time.Minute
 	// refreshTokenGracePeriod is how long the previous refresh token is still accepted after it has been rotated.
 	refreshTokenGracePeriod = 10 * time.Second
