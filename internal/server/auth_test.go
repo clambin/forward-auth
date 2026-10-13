@@ -16,7 +16,6 @@ import (
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/forwardauth"
-	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -204,7 +203,6 @@ func BenchmarkForwardAuthHandler(b *testing.B) {
 		configuration.ServerConfiguration{CookieName: cookieName, Key: "secret", Domain: ".example.com"},
 		handler,
 		&fAuthn,
-		&fakeRedisClient{},
 		&fakeMetrics{},
 		slog.New(slog.DiscardHandler),
 	)
@@ -372,14 +370,4 @@ type fakeMetrics struct{}
 
 func (f fakeMetrics) InstrumentedHandler(_ string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler { return next }
-}
-
-var _ RedisClient = fakeRedisClient{}
-
-type fakeRedisClient struct{ err error }
-
-func (f fakeRedisClient) Ping(ctx context.Context) *redis.StatusCmd {
-	cmd := redis.NewStatusCmd(ctx)
-	cmd.SetErr(f.err)
-	return cmd
 }

@@ -3,8 +3,7 @@ on:
   push:
     branches:
       - main
-      - refresh
-      - cycle
+      - healthz
 permissions:
   contents: read
   packages: write

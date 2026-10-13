@@ -3,8 +3,7 @@ on:
   push:
     branches-ignore:
       - main
-      - refresh
-      - cycle
+      - healthz
   workflow_call:
     secrets:
       codecov-token:

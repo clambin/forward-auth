@@ -9,6 +9,9 @@ logger:
 prometheus:
   addr: :9120
   path: /metrics
+health:
+  addr: :8888
+  path: /healthz
 storage:
   type: redis
   redis:

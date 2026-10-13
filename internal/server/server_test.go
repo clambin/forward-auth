@@ -25,7 +25,7 @@ func TestServer(t *testing.T) {
 	an, err := authn.New(t.Context(), cfg)
 	require.NoError(t, err)
 
-	h := New(cfg.Server, handler, an, nil, observability.GetMetrics(), slog.New(slog.DiscardHandler))
+	h := New(cfg.Server, handler, an, observability.GetMetrics(), slog.New(slog.DiscardHandler))
 
 	// forward-auth
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/forwardauth", nil)
@@ -38,12 +38,6 @@ func TestServer(t *testing.T) {
 	resp = httptest.NewRecorder()
 	h.ServeHTTP(resp, req)
 	require.Equal(t, http.StatusBadRequest, resp.Code)
-
-	// healthcheck
-	req = httptest.NewRequest(http.MethodGet, "/healthz", nil)
-	resp = httptest.NewRecorder()
-	h.ServeHTTP(resp, req)
-	require.Equal(t, http.StatusOK, resp.Code)
 
 	// API
 	req = httptest.NewRequest(http.MethodGet, "/api/sessions/list", nil)

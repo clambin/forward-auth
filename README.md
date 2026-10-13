@@ -210,6 +210,14 @@ prometheus:
   # prometheus metrics path. Default: "/metrics".
   path: /metrics
 
+# Health check. Note: only relevant when using Redis as storage 
+health:
+  # Health check listener. Default ":8888".
+  addr: :8888
+  # Health check path. Default: "/healthz".
+  path: /healthz
+
+
 authn:
   # Maximum lifetime of a CSRF state token. Default: 10m.
   # Effectively, how long we wait for the user to authenticate with their OIDC provider.
