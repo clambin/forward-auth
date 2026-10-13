@@ -31,9 +31,9 @@ function populateSessions(sessions) {
 
     Object.entries(sessions)
         .sort(([, a], [, b]) => new Date(b.last_seen) - new Date(a.last_seen))
-        .forEach(([id, session]) => {
+        .forEach(([_, session]) => {
             const row = doc.createElement('tr');
-            row.dataset.sessionId = id;
+            row.dataset.sessionId = session.id;
 
             const tdCheckbox = doc.createElement('td');
             const checkbox = doc.createElement('input');

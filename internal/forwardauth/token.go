@@ -1,0 +1,134 @@
+package forwardauth
+
+import (
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"time"
+	"uuid"
+
+	"github.com/clambin/forward-auth/internal/authn/provider"
+	"github.com/golang-jwt/jwt/v5"
+)
+
+const (
+	refreshTokenByteSize = 32 // 256 bit
+	tokenExpiration      = 15 * time.Minute
+	// refreshTokenGracePeriod is how long the previous refresh token is still accepted after it has been rotated.
+	refreshTokenGracePeriod = 10 * time.Second
+	tokenIssuer             = "forward-auth"
+)
+
+type RefreshToken [refreshTokenByteSize]byte
+
+func generateRefreshToken() RefreshToken {
+	var b [refreshTokenByteSize]byte
+	_, _ = rand.Read(b[:])
+	return b
+}
+
+// next returns the refresh token that succeeds t. The successor is derived from t and the session's secret,
+// so renewing the same refresh token multiple times (e.g. by concurrent requests) always yields the same successor.
+func (t RefreshToken) next(secret []byte) RefreshToken {
+	mac := hmac.New(sha256.New, secret)
+	mac.Write(t[:])
+	var next RefreshToken
+	copy(next[:], mac.Sum(nil))
+	return next
+}
+
+func (t RefreshToken) MarshalJSON() ([]byte, error) {
+	return json.Marshal(base64.StdEncoding.EncodeToString(t[:]))
+}
+
+func (t *RefreshToken) UnmarshalJSON(b []byte) error {
+	var encoded string
+	if err := json.Unmarshal(b, &encoded); err != nil {
+		return err
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err == nil {
+		copy(t[:], decoded)
+	}
+	return err
+}
+
+func (t RefreshToken) hash() refreshTokenHash {
+	return sha256.Sum256(t[:])
+}
+
+type refreshTokenHash [sha256.Size]byte
+
+func (h refreshTokenHash) MarshalJSON() ([]byte, error) {
+	return json.Marshal(h.String())
+}
+
+func (h *refreshTokenHash) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	raw, err := base64.StdEncoding.DecodeString(s)
+	if err == nil {
+		copy(h[:], raw)
+	}
+	return err
+}
+
+func (h *refreshTokenHash) String() string {
+	return base64.StdEncoding.EncodeToString(h[:])
+}
+
+type Token struct {
+	jwt.RegisteredClaims
+	Identity     provider.Identity `json:"identity"`
+	SessionID    string            `json:"sessionID"`
+	RefreshToken RefreshToken      `json:"refreshToken"`
+}
+
+func generateToken(sessionID string, identity provider.Identity) Token {
+	return Token{
+		ID:           uuid.New().String(),
+		Issuer:       tokenIssuer,
+		IssuedAt:     jwt.NewNumericDate(time.Now()),
+		ExpiresAt:    jwt.NewNumericDate(time.Now().Add(tokenExpiration)),
+		SessionID:    sessionID,
+		RefreshToken: generateRefreshToken(),
+		Identity:     identity,
+	}
+}
+
+func ParseToken(rawToken string, signingKey []byte) (Token, error) {
+	signFunc := func(token *jwt.Token) (any, error) {
+		return signingKey, nil
+	}
+
+	jwtToken, err := jwt.ParseWithClaims(rawToken, &Token{}, signFunc,
+		jwt.WithoutClaimsValidation(),                                // we want to check expiration ourselves
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), // simplifies signFunc
+	)
+	if err != nil {
+		return Token{}, fmt.Errorf("jwt: %w", err)
+	}
+	token := *jwtToken.Claims.(*Token)
+
+	// these aren't really necessary. Issuer is easily spoofed and Subject will be validated against the Store anyway.
+	if token.Issuer != tokenIssuer {
+		return Token{}, fmt.Errorf("jwt issuer is not %s", tokenIssuer)
+	}
+	if token.Identity.Email == "" {
+		return Token{}, fmt.Errorf("jwt identity email is empty")
+	}
+	return token, nil
+}
+
+func (t Token) Expired() bool {
+	return t.ExpiresAt == nil || time.Now().After(t.ExpiresAt.Time)
+}
+
+func (t Token) Sign(key []byte) (string, error) {
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, t).SignedString(key)
+}

@@ -1,0 +1,6 @@
+reviews:
+  profile: "chill"
+  tools:
+    golangci-lint:
+      enabled: true
+      config_file: .golangci.yaml

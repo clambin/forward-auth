@@ -16,7 +16,7 @@ which began as a reimplementation of Thom Seddon's [traefik-forward-auth](https:
 The main differences with the original are:
 
 - authorization rules express which user has access to which application
-- session state is maintained centrally, reducing the security requirements on the browser cookie (effectively just a random ID)
+- sessions are stored centrally: the browser cookie holds a short-lived JWT that is renewed against the session store, so sessions can be revoked
 - lightweight UI to manage a user's sessions
 
 ---
@@ -39,7 +39,6 @@ The main differences with the original are:
   - [What is a Session?](#what-is-a-session)
   - [Deleting Sessions via UI](#deleting-sessions-via-ui)
   - [Logging Out](#logging-out)
-  - [What Happens After Deletion?](#what-happens-after-deletion)
 - [Metrics](#metrics)
 - [Troubleshooting](#troubleshooting)
 - [Author](#author)
@@ -61,17 +60,18 @@ Client ──► Traefik ──► forward-auth ──► OIDC Provider
 
 1. Request hits Traefik
 2. Traefik calls `forward-auth`
-3. If user has a valid session → request is allowed
-4. Otherwise → redirect to OIDC provider
-5. After login → session is created and stored
+3. If the cookie holds a valid JWT → request is allowed
+4. If the JWT has expired → it is renewed using its refresh token, provided the session still exists in the store
+5. Otherwise → redirect to OIDC provider
+6. After login → session is created and stored, and a JWT is sent back in the session cookie
 
 
 ---
 
 ## How It Works
 
-`forward-auth` uses **OIDC authentication** to authenticate the user. Authenticated users are allocated a **session** 
-that is passed via an **HTTP cookie**.
+`forward-auth` uses **OIDC authentication** to authenticate the user. Authenticated users are allocated a **session**,
+which is kept in the session store. The browser receives a signed **JWT** in an **HTTP cookie**, which references that session.
 
 ### High-Level Flow
 
@@ -105,7 +105,8 @@ that is passed via an **HTTP cookie**.
      │ Retry request  │ forwardAuth      │                     │                     │
      │───────────────►│─────────────────►│                     │                     │
      │                │                  │                     │                     │
-     │                │                  │  Validate session   │                     │
+     │                │                  │  Validate JWT       │                     │
+     │                │                  │  (renew if expired) │                     │
      │                │   OK (2xx)       │                     │                     │
      │                │◄─────────────────│                     │                     │
      │                │                  │                     │                     │
@@ -135,7 +136,7 @@ that is passed via an **HTTP cookie**.
 
 #### Session Store
 
-- Stores session data (ID, user, timestamps)
+- Stores session data (ID, user, timestamps, user agent, hashes of the current and previous refresh tokens)
 - Backends:
     - `local` (in-memory)
     - `redis`
@@ -144,8 +145,16 @@ Note: Redis must be 6.2 or higher.
 
 #### Session Cookie
 
-- Stored in browser
-- Contains session ID
+- Stored in browser (`HttpOnly`, `Secure`, `SameSite=Lax`)
+- Contains a JWT, signed with `server.key`, holding:
+    - the session ID
+    - the user's identity
+    - a refresh token
+- The JWT is valid for 15 minutes.
+- Once the JWT has expired, `forward-auth` renews it: the refresh token is checked against the session store and,
+  if the session still exists and matches the refresh token, a new JWT is issued with a new refresh token and is sent back in the cookie.
+- Refresh tokens are rotated on every renewal. For a few seconds after rotation, the previous refresh token is still accepted,
+  so concurrent requests carrying the same expired JWT can all renew it. After that, only the current refresh token is accepted.
 
 #### Protected application(s)
 
@@ -185,7 +194,10 @@ server:
   # Domain for which the cookie is valid. 
   # All protected hostnames (including auth) need to be subdomains of this domain.
   domain: .example.com
-
+  # Key to sign and verify the JWT.
+  # Must be at least 32 characters long.
+  # Use environment variables to keep these credentials out of the configuration file.
+  key: "${JWT_KEY}"
 logger:
   # Logging level. Default: "info".
   level: info
@@ -215,10 +227,12 @@ authn:
     # OIDC-related configuration.
     oidc:
       # OIDC client ID.
-      client_id: "<client-id>"
+      # Use environment variables to keep these credentials out of the configuration file.
+      client_id: "${OIDC_CLIENT_ID}"
       # OIDC client secret.
-      client_secret: "<client-secret>"
-      # OIDC issuer URL. Only required for type oidc.
+      # Use environment variables to keep these credentials out of the configuration file.
+      client_secret: "${OIDC_CLIENT_SECRET}"
+      # OIDC issuer URL.
       issuer_url: https://accounts.google.com
       # scopes to request from the OIDC provider. 
       # only override this if you know what you're doing.
@@ -226,9 +240,11 @@ authn:
     # GitHub-related configuration. Only required for type github.
     github:
       # Oauth2 client ID.
-      client_id: "<client-id>"
+      # Use environment variables to keep these credentials out of the configuration file.
+      client_id: "${GITHUB_CLIENT_ID}"
       # Oauth2 client secret.
-      client_secret: "<client-secret>"
+      # Use environment variables to keep these credentials out of the configuration file.
+      client_secret: "${GITHUB_CLIENT_SECRET}"
       # scopes to request from github. 
       # only override this if you know what you're doing.
       scopes: [ user:email, read:user ]
@@ -252,15 +268,16 @@ storage:
   # Session and CSRF state storage type. local or redis. Default: "local".
   type: redis
   # Redis configuration.
+  # Use environment variables to keep these credentials out of the configuration file.
   redis:
     addr: redis:6379
-    username: "redis-username"
-    password: "redis-password"
+    username: "${REDIS_USERNAME}"
+    password: "${REDIS_PASSWORD}"
     db: 0
 
 session:
   # Session lifetime. Default: 24h. 
-  # Session is deleted after this time.
+  # The session is invalidated after this time, and the user needs to log in again.
   session_ttl: 24h
 ```
 
@@ -317,6 +334,8 @@ spec:
       - X-Forwarded-User-Email
       - X-Forwarded-User-Name
       - X-Forwarded-User-Groups
+    addAuthCookiesToResponse:
+      - forward-auth-session
 ```
 
 ---
@@ -394,19 +413,48 @@ https://auth.example.com/
 
 ### What is a Session?
 
-A session represents an authenticated user and contains:
+A session represents an authenticated user. It is made up of two parts:
 
-- User identity (e.g., email)
-- Last User Agent
-- Last Seen timestamp
+**The session cookie** holds a signed JWT, containing:
 
-Each session is identified by a unique **session ID**, which is stored in the browser cookie:
+- Session ID
+- User identity (subject, email, name)
+- Refresh token
+- Expiration time (15 minutes after issue/renewal)
 
-```
-Cookie: forward-auth-session=<session-id>
-```
+**The session store** (local or Redis) holds, for each session:
 
----
+- Session ID
+- User identity
+- Hashes of the current and previous refresh tokens (the refresh tokens themselves are never stored)
+- A per-session secret, used to derive the next refresh token
+- The time the refresh token was last rotated
+- Last user agent
+- Issued at / last seen timestamps
+
+The JWT's lifecycle:
+
+1. At login, a new session is created in the store and a JWT is issued in the session cookie.
+2. Once the JWT expires, `forward-auth` looks up the session in the store and checks the JWT's refresh token
+   against the stored hashes:
+   - If it matches the **current** refresh token, the refresh token is rotated: a new refresh token is derived
+     from the current one and the session's secret. The current hash becomes the previous hash, and the new refresh token's hash
+     becomes the current hash.
+   - If it matches the **previous** refresh token, and the refresh token was rotated less than 10 seconds ago,
+     the session was already renewed (typically by a concurrent request). The refresh token is not rotated again:
+     the JWT receives the current refresh token instead. After those 10 seconds, the previous refresh token is rejected. 
+   In both cases, the session's last seen timestamp and user agent are updated, and a renewed JWT is sent back in the cookie.
+3. If the session no longer exists (it was deleted, or it expired after `session.session_ttl` without being renewed),
+   or the refresh token matches neither the current refresh token nor (within the 10-second grace period) the previous one,
+   the JWT cannot be renewed and the user is redirected to the identity provider to log in again.
+
+Since the next refresh token is derived from the current one, renewing the same refresh token always produces
+the same result. A browser often sends several requests at once (e.g. page assets). If these carry the same expired JWT,
+they all receive the same renewed refresh token, regardless of the order in which they are processed.
+
+Because the refresh token is rotated on every renewal, an expired JWT can effectively only be renewed once.
+If a copy of an old JWT (e.g. a stolen cookie) is presented more than 10 seconds after the session has been renewed,
+its refresh token is no longer accepted and renewal fails.
 
 ### Deleting Sessions via UI
 
@@ -428,30 +476,11 @@ To log out a session:
 
 1. Call the delete endpoint for that session
 2. The session is removed from the store
-3. Subsequent requests using that session will be rejected
+3. Subsequent requests are redirected to the identity provider
 
-For example, logging out the **current session**:
+Users can only delete their own sessions. The session IDs of a user's sessions are shown in the UI,
+or can be retrieved via the API.
 
-- Read the session ID from the cookie
-- Call:
-
-```bash
-curl -X DELETE \
-  -b "forward-auth-session=<session-id>" \
-  https://auth.example.com/api/sessions/session/<session-id>
-```
-
----
-
-### What Happens After Deletion?
-
-- Session is removed from storage (local or Redis)
-- Cookie may still exist in the browser
-- Next request:
-  - Session lookup fails
-  - User is redirected to the identity provider to log in again
-
---- 
 ## Metrics
 
 `forward-auth` exposes the following Prometheus metrics on the `/metrics` endpoint:

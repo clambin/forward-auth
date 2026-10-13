@@ -14,9 +14,9 @@ import (
 	"github.com/clambin/forward-auth/internal/authn"
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/clambin/forward-auth/internal/configuration"
+	"github.com/clambin/forward-auth/internal/forwardauth"
+	"github.com/clambin/forward-auth/internal/observability"
 	"github.com/clambin/forward-auth/internal/server"
-	"github.com/clambin/forward-auth/internal/server/middleware"
-	"github.com/clambin/forward-auth/internal/sessions"
 	"github.com/goccy/go-yaml"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
@@ -36,6 +36,11 @@ func main() {
 	}
 	logger := cfg.Logger.Logger(os.Stderr)
 
+	if len(cfg.Server.Key) < 32 {
+		logger.Error("token key must be at least 32 characters long")
+		os.Exit(1)
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -45,11 +50,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	authorizer := authz.Authorizer{Rules: cfg.Authz.Rules, Groups: cfg.Authz.Groups}
+	authorizer := &authz.Authorizer{Rules: cfg.Authz.Rules, Groups: cfg.Authz.Groups}
 
-	sessionMgr, err := sessions.New(cfg.Session.SessionTTL, cfg.Storage)
+	handler, err := forwardauth.New(cfg.Session.SessionTTL, authorizer, cfg.Storage)
 	if err != nil {
-		logger.Error("failed to create session manager", "err", err)
+		logger.Error("failed to create token manager cache", "err", err)
 		os.Exit(1)
 	}
 
@@ -65,11 +70,27 @@ func main() {
 
 	logger.Info("starting forward-auth", "version", version)
 
-	metrics := middleware.GetMetrics()
+	metrics := observability.GetMetrics()
 	prometheus.MustRegister(
 		metrics,
-		sessions.InstrumentedUserSessionManager{UserSessionManager: sessionMgr},
-		authn.InstrumentedAuthenticator{Authenticator: authenticator},
+		observability.InstrumentedStore{
+			Store: handler,
+			Desc: prometheus.NewDesc(
+				"forward_auth_session_count",
+				"Number of active sessions",
+				nil,
+				nil,
+			),
+		},
+		observability.InstrumentedStore{
+			Store: authenticator,
+			Desc: prometheus.NewDesc(
+				"forward_auth_state_count",
+				"Number of active states",
+				nil,
+				nil,
+			),
+		},
 	)
 
 	var g errgroup.Group
@@ -81,7 +102,7 @@ func main() {
 	g.Go(func() error {
 		return httputils.RunServer(ctx, &http.Server{
 			Addr:    cfg.Server.Addr,
-			Handler: server.New(cfg.Server, sessionMgr, authenticator, &authorizer, redisClient, metrics, logger),
+			Handler: server.New(cfg.Server, handler, authenticator, redisClient, metrics, logger),
 		})
 	})
 	if err = g.Wait(); err != nil {

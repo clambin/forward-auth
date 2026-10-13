@@ -22,6 +22,7 @@ var DefaultConfiguration = Configuration{
 	Server: ServerConfiguration{
 		Addr:       ":8080",
 		CookieName: "forward-auth-session",
+		Key:        "change-me!",
 	},
 	Logger: LoggerConfiguration{
 		Level:  "info",
@@ -62,6 +63,7 @@ type Configuration struct {
 type ServerConfiguration struct {
 	Addr       string `yaml:"addr"`
 	CookieName string `yaml:"cookieName"`
+	Key        string `yaml:"key"`
 	Domain     string `yaml:"domain"`
 }
 

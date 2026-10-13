@@ -1,6 +1,7 @@
 package server
 
 import (
+	"cmp"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -10,92 +11,74 @@ import (
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/configuration"
-	"github.com/clambin/forward-auth/internal/sessions"
+	"github.com/clambin/forward-auth/internal/forwardauth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestListSessionsHandler(t *testing.T) {
-	tests := []struct {
-		name             string
-		target           string
-		addCookie        bool
-		wantCode         int
-		wantSessionCount int
-	}{
-		{"valid", "/api/sessions/list", true, http.StatusOK, 1},
-		{"invalid", "/api/sessions/list", false, http.StatusUnauthorized, 0},
-	}
+func TestHandleListSessions(t *testing.T) {
+	mgr, err := forwardauth.New(time.Hour, nil, configuration.StorageConfiguration{})
+	require.NoError(t, err)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sessionManager, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
-			sessionID, _ := sessionManager.Add(t.Context(), provider.Identity{Email: "foo@example.com"}, "")
-			const cookieName = "session"
+	req, _ := http.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("User-Agent", "test")
+	req.Header.Set(forwardedUserEmailHeader, "test@example.com")
+	_, err = mgr.CreateSession(t.Context(), provider.Identity{Email: "test@example.com"}, req)
+	require.NoError(t, err)
 
-			s := New(
-				configuration.ServerConfiguration{CookieName: cookieName, Domain: "example.com"},
-				sessionManager,
-				nil,
-				nil,
-				&fakeRedisClient{},
-				&fakeMetrics{},
-				slog.New(slog.DiscardHandler),
-			)
+	h := handleListSessions(mgr, slog.New(slog.DiscardHandler))
+	resp := httptest.NewRecorder()
+	h.ServeHTTP(resp, req)
 
-			req := httptest.NewRequest(http.MethodGet, tt.target, nil)
-			if tt.addCookie {
-				req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID.String()})
-			}
-			resp := httptest.NewRecorder()
-			s.ServeHTTP(resp, req)
-			require.Equal(t, tt.wantCode, resp.Code)
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, "application/json", resp.Header().Get("Content-Type"))
 
-			if tt.wantCode != http.StatusOK {
-				return
-			}
-
-			var l map[string]sessions.UserSession
-			require.NoError(t, json.NewDecoder(resp.Body).Decode(&l))
-			assert.Len(t, l, tt.wantSessionCount)
-		})
-	}
+	var sessions []listSessionsResponseItem
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&sessions))
+	require.Len(t, sessions, 1)
+	assert.Equal(t, "test@example.com", sessions[0].Identity.Email)
+	assert.NotZero(t, sessions[0].SessionID)
+	assert.Equal(t, "test", sessions[0].UserAgent)
 }
 
-func TestDeleteSessionHandler(t *testing.T) {
-	sessionManager, _ := sessions.New(5*time.Minute, configuration.StorageConfiguration{})
-	sessionIDFoo, _ := sessionManager.Add(t.Context(), provider.Identity{Email: "foo@example.com"}, "")
-	sessionIDFoo2, _ := sessionManager.Add(t.Context(), provider.Identity{Email: "foo@example.com"}, "")
-	sessionIDBar, _ := sessionManager.Add(t.Context(), provider.Identity{Email: "bar@example.com"}, "")
-
+func TestHandleDeleteSession(t *testing.T) {
 	tests := []struct {
-		name     string
-		target   string
-		wantCode int
+		name       string
+		path       string
+		userHeader string
+		want       int
 	}{
-		{"success", "/api/sessions/session/" + sessionIDFoo.String(), http.StatusNoContent},
-		{"unauthorized session", "/api/sessions/session/" + sessionIDBar.String(), http.StatusForbidden},
-		{"invalid session", "/api/sessions/session/invalid", http.StatusNotFound},
+		{"missing header", "", "", http.StatusForbidden},
+		{"missing session id", "/session/", "test@example.com", http.StatusNotFound},
+		{"wrong session id", "/session/invalid", "test@example.com", http.StatusNotFound},
+		{"wrong user in header", "", "invalid@example.com", http.StatusNotFound},
+		{"valid", "", "test@example.com", http.StatusNoContent},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			const cookieName = "session"
-			s := New(
-				configuration.ServerConfiguration{CookieName: cookieName, Domain: "example.com"},
-				sessionManager,
-				nil,
-				nil,
-				&fakeRedisClient{},
-				&fakeMetrics{},
-				slog.New(slog.DiscardHandler),
-			)
+			handler, err := forwardauth.New(time.Hour, &fakeAuthorizer{allow: true}, configuration.StorageConfiguration{})
+			require.NoError(t, err)
 
-			req := httptest.NewRequest(http.MethodDelete, tt.target, nil)
-			req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionIDFoo2.String()})
+			tok, err := handler.CreateSession(t.Context(), provider.Identity{Email: "test@example.com"}, &http.Request{})
+			require.NoError(t, err)
+
+			h := handleSessions(handler, slog.New(slog.DiscardHandler))
+
+			req, _ := http.NewRequest(http.MethodDelete, cmp.Or(tt.path, "/session/"+tok.SessionID), nil)
+			if tt.userHeader != "" {
+				req.Header.Set(forwardedUserEmailHeader, tt.userHeader)
+			}
 			resp := httptest.NewRecorder()
-			s.ServeHTTP(resp, req)
-			require.Equal(t, tt.wantCode, resp.Code)
+			h.ServeHTTP(resp, req)
+			assert.Equal(t, tt.want, resp.Code)
+
+			count, _ := handler.Len(t.Context())
+			if resp.Code == http.StatusNoContent {
+				assert.Equal(t, 0, count)
+			} else {
+				assert.Equal(t, 1, count)
+			}
 		})
 	}
 }

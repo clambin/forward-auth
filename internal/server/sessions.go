@@ -4,65 +4,102 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"maps"
 	"net/http"
+	"time"
 
-	"github.com/clambin/forward-auth/internal/cache"
-	"github.com/clambin/forward-auth/internal/sessions"
+	"github.com/clambin/forward-auth/internal/authn/provider"
+	"github.com/clambin/forward-auth/internal/forwardauth"
 )
 
-// getSessionsHandler returns a list of all sessions for the user.
-func getSessionsHandler(sessionManager *sessions.UserSessionManager, _ *slog.Logger) http.Handler {
+func handleSessions(
+	handler *forwardauth.Handler,
+	logger *slog.Logger,
+) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("GET /list", handleListSessions(handler, logger.With("handler", "listSessions")))
+	mux.Handle("DELETE /session/{id}", handleDeleteSession(handler, logger.With("handler", "deleteSession")))
+
+	return ensureUserEmailHeader(mux)
+}
+
+type listSessionsResponseItem struct {
+	SessionID string            `json:"id"`
+	Identity  provider.Identity `json:"user_info"`
+	LastSeen  time.Time         `json:"last_seen"`
+	UserAgent string            `json:"user_agent"`
+}
+
+func handleListSessions(
+	handler *forwardauth.Handler,
+	logger *slog.Logger,
+
+) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// session validation runs in strict mode, so handler is only called if the session is valid
-		_, session, _ := sessions.UserSessionFromCtx(r.Context())
-		allSessions, err := sessionManager.List(r.Context())
+		sessions, err := handler.List(r.Context(), r.Header.Get(forwardedUserEmailHeader))
 		if err != nil {
-			http.Error(w, "failed to list sessions", http.StatusInternalServerError)
+			logger.Error("failed to list sessions", "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		// only return sessions belonging to the user
-		userSessions := maps.Clone(allSessions)
-		maps.DeleteFunc(userSessions, func(k string, v sessions.UserSession) bool {
-			return v.UserInfo.Email != session.UserInfo.Email
-		})
+		response := make([]listSessionsResponseItem, len(sessions))
+		for i := range sessions {
+			lastSeen := sessions[i].RotatedAt
+			if lastSeen.IsZero() {
+				lastSeen = sessions[i].IssuedAt
+			}
+			response[i] = listSessionsResponseItem{
+				SessionID: sessions[i].ID,
+				Identity:  sessions[i].Identity,
+				LastSeen:  lastSeen,
+				UserAgent: sessions[i].UserAgent,
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		_ = enc.Encode(userSessions)
+		if err = json.NewEncoder(w).Encode(response); err != nil {
+			logger.Error("failed to encode response", "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 }
 
-// deleteSessionHandler deletes a session. If the requested session does not belong to the user, the request is rejected.
-func deleteSessionHandler(sessionManager *sessions.UserSessionManager, logger *slog.Logger) http.Handler {
+func handleDeleteSession(
+	handler *forwardauth.Handler,
+	logger *slog.Logger,
+) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// session validation runs in struct mode, so this is only called if the session is valid
-		_, mySession, _ := sessions.UserSessionFromCtx(r.Context())
-		sessionID := r.PathValue("id")
-		session, err := sessionManager.Get(r.Context(), sessionID)
-		if errors.Is(err, cache.ErrNotFound) {
-			http.Error(w, "session not found", http.StatusNotFound)
-			return
-		}
+		// Note: we rely on the forwarded user email header to identify the user
+		// ListSessions and DeleteSessions are only accessed after forward-auth has run
+		// (this is configured by the HTTPRoute, so we can trust the user email header)
+		username := r.Header.Get(forwardedUserEmailHeader)
+		// if session id is missing, the http router will not match to this route and sends a 404 directly.
+		id := r.PathValue("id")
+		// Delete checks that the session is associated with the user
+		err := handler.DeleteSession(r.Context(), username, id)
+		logger.Debug("deleting session", "username", username, "id", id, "err", err)
 		if err != nil {
-			http.Error(w, "failed to get session", http.StatusInternalServerError)
-			return
-		}
-		if session.UserInfo.Email != mySession.UserInfo.Email {
-			logger.Warn("refused to delete session: session does not belong to the user",
-				slog.String("sessionID", sessionID),
-				slog.String("request email", mySession.UserInfo.Email),
-				slog.String("session email", session.UserInfo.Email),
-			)
-			http.Error(w, "session does not belong to the user", http.StatusForbidden)
-			return
-		}
-		if err = sessionManager.Delete(r.Context(), sessionID); err != nil {
+			if errors.Is(err, forwardauth.ErrSessionNotFound) {
+				http.Error(w, "session not found", http.StatusNotFound)
+				return
+			}
 			logger.Error("failed to delete session", "err", err)
-			http.Error(w, "failed to delete session", http.StatusInternalServerError)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		logger.Debug("deleted session", "sessionID", sessionID)
 		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+// ensureUserEmailHeader is a middleware that ensures the forwarded user email header is present
+// Note: handleSessions relies on the forwarded user email header to identify the user, rather than the JWT.
+// ListSessions and DeleteSessions are only accessed after forward-auth has run
+// (this is configured by the HTTPRoute, so we can trust the user email header).
+func ensureUserEmailHeader(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if username := r.Header.Get(forwardedUserEmailHeader); username == "" {
+			http.Error(w, "missing X-Forwarded-User header", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
