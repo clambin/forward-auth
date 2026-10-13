@@ -1,5 +1,5 @@
 reviews:
-  profile: "assertive"
+  profile: "chill"
   tools:
     golangci-lint:
       enabled: true
