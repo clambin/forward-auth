@@ -20,7 +20,7 @@ func TestSessions(t *testing.T) {
 	require.NoError(t, err)
 	endpoint, err := c.Endpoint(t.Context(), "")
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = c.Terminate(context.Background()) })
+	t.Cleanup(func() { assert.NoError(t, c.Terminate(context.Background())) })
 
 	tests := []struct {
 		name string

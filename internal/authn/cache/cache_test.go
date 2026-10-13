@@ -17,7 +17,7 @@ func TestCache(t *testing.T) {
 	require.NoError(t, err)
 	endpoint, err := c.Endpoint(ctx, "")
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = c.Terminate(context.Background()) })
+	t.Cleanup(func() { assert.NoError(t, c.Terminate(context.Background())) })
 
 	tests := []struct {
 		name string
@@ -67,7 +67,7 @@ func TestRedisCache_Len(t *testing.T) {
 	require.NoError(t, err)
 	endpoint, err := c.Endpoint(ctx, "")
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = c.Terminate(context.Background()) })
+	t.Cleanup(func() { assert.NoError(t, c.Terminate(context.Background())) })
 
 	cfg := configuration.StorageConfiguration{
 		Type:  "redis",
