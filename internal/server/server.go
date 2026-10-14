@@ -35,11 +35,13 @@ func New(
 
 	mux.Handle("/api/auth/forwardauth",
 		metrics.InstrumentedHandler("forwardauth")(
-			handleForwardAuth(
-				cfg,
-				handler,
-				authenticator,
-				logger.With(slog.String("handler", "forwardAuth")),
+			withForwardAuthToken(cfg.CookieName, []byte(cfg.Key), laxTokenMode)(
+				handleForwardAuth(
+					cfg,
+					handler,
+					authenticator,
+					logger.With(slog.String("handler", "forwardAuth")),
+				),
 			),
 		),
 	)

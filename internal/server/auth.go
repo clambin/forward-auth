@@ -58,8 +58,8 @@ func handleForwardAuth(
 		}
 
 		// extract token from cookie
-		token, err := tokenFromCookie(r, cfg.CookieName, []byte(cfg.Key))
-		if err != nil {
+		token, err := tokenFromRequest(r)
+		if err != nil && !errors.Is(err, ErrTokenExpired) {
 			reqLogger.Error("missing / invalid token in cookie. redirecting to login page", slog.Any("err", err))
 			redirectToLogin(originalURL)
 			return
@@ -175,14 +175,4 @@ func setUserHeaders(w http.ResponseWriter, token forwardauth.Token, groups []str
 		slices.Sort(groups)
 		w.Header().Set(forwardedUserGroupsHeader, strings.Join(groups, ","))
 	}
-}
-
-func tokenFromCookie(r *http.Request, cookieName string, key []byte) (forwardauth.Token, error) {
-	// get the jwt token
-	cookie, err := r.Cookie(cookieName)
-	if err != nil {
-		return forwardauth.Token{}, err
-	}
-	// parse the token
-	return forwardauth.ParseToken(cookie.Value, key)
 }

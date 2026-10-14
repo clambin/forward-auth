@@ -3,63 +3,30 @@ package server
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
-	"uuid"
 
 	"github.com/clambin/forward-auth/internal/forwardauth"
 )
 
 var ErrTokenExpired = errors.New("token expired")
 
-type logCtx struct{}
-
-// WithLogger adds a logger to the context of the request
-func WithLogger(logger *slog.Logger) func(next http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := context.WithValue(r.Context(), logCtx{}, logger)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-}
-
-// WithReqIDLogger is similar to WithLogger, but adds a unique Request ID to the logger
-func WithReqIDLogger(logger *slog.Logger) func(next http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := context.WithValue(r.Context(), logCtx{}, logger.With(slog.String("reqID", uuid.New().String())))
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-}
-
-// Logger returns the logger from the context of the request
-func Logger(r *http.Request) *slog.Logger {
-	logger, ok := r.Context().Value(logCtx{}).(*slog.Logger)
-	if !ok {
-		logger = slog.Default()
-	}
-	return logger
-}
-
 type tokenCtx struct{}
 type parsedToken struct {
-	token forwardauth.Token
 	err   error
+	token forwardauth.Token
 }
 
-type TokenMode int
+type tokenMode int
 
 const (
-	StrictTokenMode TokenMode = iota
-	LaxTokenMode
+	strictTokenMode tokenMode = iota
+	laxTokenMode
 )
 
-// WithForwardAuthToken parses the JWT Token out of the request and adds it to the request's context.
-// WithForwardAuthToken can operate in strict mode, rejecting a request that doesn't present a valid token,
-// and lax mode, which will allow the request to continue even if the token is invalid.
-func WithForwardAuthToken(cookieName string, secret []byte, mode TokenMode) func(next http.Handler) http.Handler {
+// withForwardAuthToken parses the JWT Token from a request and adds it to the request's context.
+// It can operate in strict mode, rejecting a request that doesn't present a valid token,
+// or in lax mode, allowing the request to continue even if the token is invalid.
+func withForwardAuthToken(cookieName string, secret []byte, mode tokenMode) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Get the cookie from the request
@@ -69,7 +36,7 @@ func WithForwardAuthToken(cookieName string, secret []byte, mode TokenMode) func
 				tok.err = ErrTokenExpired
 			}
 			// in strict mode, reject the request if the token is invalid
-			if tok.err != nil && mode == StrictTokenMode {
+			if tok.err != nil && mode == strictTokenMode {
 				http.Error(w, "invalid token", http.StatusUnauthorized)
 				return
 			}
@@ -80,10 +47,20 @@ func WithForwardAuthToken(cookieName string, secret []byte, mode TokenMode) func
 	}
 }
 
-func TokenFromRequest(r *http.Request) (forwardauth.Token, error) {
+func tokenFromRequest(r *http.Request) (forwardauth.Token, error) {
 	tok, ok := r.Context().Value(tokenCtx{}).(parsedToken)
 	if !ok {
 		return forwardauth.Token{}, http.ErrNoCookie
 	}
 	return tok.token, tok.err
+}
+
+func tokenFromCookie(r *http.Request, cookieName string, key []byte) (forwardauth.Token, error) {
+	// get the jwt token
+	cookie, err := r.Cookie(cookieName)
+	if err != nil {
+		return forwardauth.Token{}, err
+	}
+	// parse the token
+	return forwardauth.ParseToken(cookie.Value, key)
 }

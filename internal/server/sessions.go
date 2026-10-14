@@ -22,7 +22,7 @@ func sessionsRoutes(
 	mux.Handle("GET /list", handleListSessions(handler, logger.With("handler", "listSessions")))
 	mux.Handle("DELETE /session/{id}", handleDeleteSession(handler, logger.With("handler", "deleteSession")))
 
-	return WithForwardAuthToken(cfg.CookieName, []byte(cfg.Key), StrictTokenMode)(mux)
+	return withForwardAuthToken(cfg.CookieName, []byte(cfg.Key), strictTokenMode)(mux)
 }
 
 type listSessionsResponseItem struct {
@@ -39,7 +39,7 @@ func handleListSessions(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// get the token, which contains the user email.
 		// handleSessions runs WithForwardAuthToken in strict mode, so we can trust the token is present and valid.
-		token, _ := TokenFromRequest(r)
+		token, _ := tokenFromRequest(r)
 
 		// list sessions for the authenticated user
 		sessions, err := handler.List(r.Context(), token.Identity.Email)
@@ -75,7 +75,7 @@ func handleDeleteSession(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// get the token, which contains the user email.
 		// handleSessions runs WithForwardAuthToken in strict mode, so we can trust the token is present and valid.
-		token, _ := TokenFromRequest(r)
+		token, _ := tokenFromRequest(r)
 
 		// if session id is missing, the http router will not match to this route and sends a 404 directly.
 		id := r.PathValue("id")

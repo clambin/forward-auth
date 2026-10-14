@@ -16,6 +16,7 @@ import (
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/forwardauth"
+	"github.com/clambin/forward-auth/internal/observability"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -117,11 +118,13 @@ func TestHandleForwardAuth(t *testing.T) {
 			fAuthz := fakeAuthorizer{allow: tt.allow}
 			handler, _ := forwardauth.New(time.Hour, &fAuthz, configuration.StorageConfiguration{})
 
-			h := handleForwardAuth(
-				cfg,
-				handler,
-				&fAuthn,
-				slog.New(slog.DiscardHandler),
+			h := withForwardAuthToken(cfg.CookieName, []byte(cfg.Key), laxTokenMode)(
+				handleForwardAuth(
+					cfg,
+					handler,
+					&fAuthn,
+					slog.New(slog.DiscardHandler),
+				),
 			)
 
 			req := forwardAuthRequest("https://example.com/?mode=true")
@@ -165,14 +168,14 @@ func TestForwardAuthHandler_Headers(t *testing.T) {
 			}
 			handler, _ := forwardauth.New(5*time.Minute, &fakeAuthorizer{allow: true, groups: tt.groups}, configuration.StorageConfiguration{})
 
-			h := handleForwardAuth(
+			h := New(
 				cfg,
 				handler,
 				&fakeAuthenticator{
 					states: make(map[string]string),
 					codes:  make(map[string]struct{}),
 				},
-
+				observability.GetMetrics(),
 				slog.New(slog.DiscardHandler),
 			)
 
@@ -200,6 +203,8 @@ func BenchmarkForwardAuthHandler(b *testing.B) {
 	// BenchmarkForwardAuthHandler-10    	  267277	      4484 ns/op	    5934 B/op	      69 allocs/op
 	// Without reqID:
 	// BenchmarkForwardAuthHandler-10    	  283459	      4219 ns/op	    5757 B/op	      66 allocs/op
+	// Token in request context:
+	// BenchmarkForwardAuthHandler-10    	  271161	      4400 ns/op	    6335 B/op	      69 allocs/op
 	const cookieName = "test"
 	var fAuthn fakeAuthenticator
 	handler, _ := forwardauth.New(time.Hour, &fakeAuthorizer{allow: true}, configuration.StorageConfiguration{})
