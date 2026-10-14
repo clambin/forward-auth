@@ -21,7 +21,7 @@ import (
 )
 
 func TestHandleForwardAuth(t *testing.T) {
-	validKey := []byte("valid-key")
+	const validKey = "valid-key"
 	type generateTokenFunc func(tb testing.TB, h *forwardauth.Handler, req *http.Request) string
 	// generateToken generates a token, signed by key, with a delta time added to the expiration time
 	generateToken := func(key []byte, delta time.Duration) func(tb testing.TB, h *forwardauth.Handler, req *http.Request) string {
@@ -43,13 +43,13 @@ func TestHandleForwardAuth(t *testing.T) {
 	}{
 		{
 			name:  "valid session, allowed",
-			token: generateToken(validKey, 0),
+			token: generateToken([]byte(validKey), 0),
 			allow: true,
 			want:  http.StatusOK,
 		},
 		{
 			name:  "valid expired jwt",
-			token: generateToken(validKey, -time.Hour),
+			token: generateToken([]byte(validKey), -time.Hour),
 			allow: true,
 			want:  http.StatusOK,
 		},
@@ -66,7 +66,7 @@ func TestHandleForwardAuth(t *testing.T) {
 		},
 		{
 			name:  "valid session, not allowed",
-			token: generateToken(validKey, 0),
+			token: generateToken([]byte(validKey), 0),
 			allow: false,
 			want:  http.StatusForbidden,
 		},
@@ -83,7 +83,7 @@ func TestHandleForwardAuth(t *testing.T) {
 			token: func(tb testing.TB, h *forwardauth.Handler, req *http.Request) string {
 				tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, req)
 				require.NoError(tb, err)
-				rawToken, err := tok.Sign(validKey)
+				rawToken, err := tok.Sign([]byte(validKey))
 				require.NoError(tb, err)
 				require.NoError(tb, h.DeleteSession(t.Context(), tok.Identity.Email, tok.SessionID))
 				return rawToken
@@ -97,7 +97,7 @@ func TestHandleForwardAuth(t *testing.T) {
 				tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, req)
 				require.NoError(tb, err)
 				tok.RefreshToken = forwardauth.RefreshToken{}
-				rawToken, err := tok.Sign(validKey)
+				rawToken, err := tok.Sign([]byte(validKey))
 				require.NoError(tb, err)
 				return rawToken
 			},
@@ -108,15 +108,17 @@ func TestHandleForwardAuth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			const cookieName = "test"
+			cfg := configuration.ServerConfiguration{
+				CookieName: "test",
+				Key:        validKey,
+				Domain:     ".example.com",
+			}
 			var fAuthn fakeAuthenticator
 			fAuthz := fakeAuthorizer{allow: tt.allow}
 			handler, _ := forwardauth.New(time.Hour, &fAuthz, configuration.StorageConfiguration{})
 
 			h := handleForwardAuth(
-				cookieName,
-				validKey,
-				".example.com",
+				cfg,
 				handler,
 				&fAuthn,
 				slog.New(slog.DiscardHandler),
@@ -124,7 +126,7 @@ func TestHandleForwardAuth(t *testing.T) {
 
 			req := forwardAuthRequest("https://example.com/?mode=true")
 			if tt.token != nil {
-				req.AddCookie(&http.Cookie{Name: cookieName, Value: tt.token(t, handler, req)})
+				req.AddCookie(&http.Cookie{Name: cfg.CookieName, Value: tt.token(t, handler, req)})
 			}
 			resp := httptest.NewRecorder()
 			h.ServeHTTP(resp, req)
@@ -156,13 +158,15 @@ func TestForwardAuthHandler_Headers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			const cookieName = "test"
+			cfg := configuration.ServerConfiguration{
+				CookieName: "test",
+				Key:        "my-signing-key",
+				Domain:     ".example.com",
+			}
 			handler, _ := forwardauth.New(5*time.Minute, &fakeAuthorizer{allow: true, groups: tt.groups}, configuration.StorageConfiguration{})
 
 			h := handleForwardAuth(
-				cookieName,
-				[]byte("my-signing-key"),
-				".example.com",
+				cfg,
 				handler,
 				&fakeAuthenticator{
 					states: make(map[string]string),
@@ -178,7 +182,7 @@ func TestForwardAuthHandler_Headers(t *testing.T) {
 			require.NoError(t, err)
 			rawToken, err := token.Sign([]byte("my-signing-key"))
 			require.NoError(t, err)
-			req.AddCookie(&http.Cookie{Name: cookieName, Value: rawToken})
+			req.AddCookie(&http.Cookie{Name: cfg.CookieName, Value: rawToken})
 
 			resp := httptest.NewRecorder()
 			h.ServeHTTP(resp, req)
@@ -265,12 +269,15 @@ func TestHandleLogin(t *testing.T) {
 				states: map[string]string{"4321": "/"},
 				codes:  map[string]struct{}{"1234": {}},
 			}
+			cfg := configuration.ServerConfiguration{
+				CookieName: "test",
+				Domain:     ".example.com",
+				Key:        "secret",
+			}
 			const cookieName = "test"
 			handler, _ := forwardauth.New(time.Hour, nil, configuration.StorageConfiguration{})
 			h := handleLogin(
-				cookieName,
-				[]byte("secret"),
-				".example.com",
+				cfg,
 				handler,
 				&fa,
 				slog.New(slog.DiscardHandler),

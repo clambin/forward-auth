@@ -17,16 +17,18 @@ import (
 )
 
 func TestHandleListSessions(t *testing.T) {
+	const username = "test@example.com"
+
+	cfg := configuration.ServerConfiguration{
+		CookieName: "forward-auth-session",
+		Key:        "secret",
+	}
+
 	mgr, err := forwardauth.New(time.Hour, nil, configuration.StorageConfiguration{})
 	require.NoError(t, err)
+	h := sessionsRoutes(cfg, mgr, slog.New(slog.DiscardHandler))
 
-	req, _ := http.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("User-Agent", "test")
-	req.Header.Set(forwardedUserEmailHeader, "test@example.com")
-	_, err = mgr.CreateSession(t.Context(), provider.Identity{Email: "test@example.com"}, req)
-	require.NoError(t, err)
-
-	h := handleListSessions(mgr, slog.New(slog.DiscardHandler))
+	req, _ := createRequest(t, mgr, username, cfg.CookieName, cfg.Key, http.MethodGet, "/list")
 	resp := httptest.NewRecorder()
 	h.ServeHTTP(resp, req)
 
@@ -36,49 +38,75 @@ func TestHandleListSessions(t *testing.T) {
 	var sessions []listSessionsResponseItem
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&sessions))
 	require.Len(t, sessions, 1)
-	assert.Equal(t, "test@example.com", sessions[0].Identity.Email)
+	assert.Equal(t, username, sessions[0].Identity.Email)
 	assert.NotZero(t, sessions[0].SessionID)
-	assert.Equal(t, "test", sessions[0].UserAgent)
 }
 
 func TestHandleDeleteSession(t *testing.T) {
+	const username = "test@example.com"
+	const invalidUsername = "invalid@example.com"
+	cfg := configuration.ServerConfiguration{
+		CookieName: "forward-auth-session",
+		Key:        "secret",
+	}
+
 	tests := []struct {
-		name       string
-		path       string
-		userHeader string
-		want       int
+		name     string
+		path     string
+		username string
+		want     int
 	}{
-		{"missing header", "", "", http.StatusForbidden},
-		{"missing session id", "/session/", "test@example.com", http.StatusNotFound},
-		{"wrong session id", "/session/invalid", "test@example.com", http.StatusNotFound},
-		{"wrong user in header", "", "invalid@example.com", http.StatusNotFound},
-		{"valid", "", "test@example.com", http.StatusNoContent},
+		{"missing session id", "/session/", username, http.StatusNotFound},
+		{"wrong session id", "/session/invalid", username, http.StatusNotFound},
+		{"wrong user in header", "", invalidUsername, http.StatusNotFound},
+		{"valid", "", username, http.StatusNoContent},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			handler, err := forwardauth.New(time.Hour, &fakeAuthorizer{allow: true}, configuration.StorageConfiguration{})
 			require.NoError(t, err)
+			h := sessionsRoutes(cfg, handler, slog.New(slog.DiscardHandler))
 
-			tok, err := handler.CreateSession(t.Context(), provider.Identity{Email: "test@example.com"}, &http.Request{})
-			require.NoError(t, err)
-
-			h := handleSessions(handler, slog.New(slog.DiscardHandler))
-
-			req, _ := http.NewRequest(http.MethodDelete, cmp.Or(tt.path, "/session/"+tok.SessionID), nil)
-			if tt.userHeader != "" {
-				req.Header.Set(forwardedUserEmailHeader, tt.userHeader)
+			tokens := make(map[string]forwardauth.Token)
+			requests := make(map[string]*http.Request)
+			for _, user := range []string{username, invalidUsername} {
+				requests[user], tokens[user] = createRequest(t, handler, user, cfg.CookieName, cfg.Key, http.MethodDelete, tt.path)
 			}
+			req := requests[username]
+			req.URL.Path = cmp.Or(tt.path, "/session/"+tokens[tt.username].SessionID)
 			resp := httptest.NewRecorder()
 			h.ServeHTTP(resp, req)
 			assert.Equal(t, tt.want, resp.Code)
 
 			count, _ := handler.Len(t.Context())
 			if resp.Code == http.StatusNoContent {
-				assert.Equal(t, 0, count)
-			} else {
 				assert.Equal(t, 1, count)
+			} else {
+				assert.Equal(t, 2, count)
 			}
 		})
 	}
+}
+
+func createRequest(
+	tb testing.TB,
+	mgr *forwardauth.Handler,
+	username string,
+	cookieName string,
+	secret string,
+	method string,
+	url string,
+) (*http.Request, forwardauth.Token) {
+	// create the session
+	tok, err := mgr.CreateSession(tb.Context(), provider.Identity{Email: username}, nil)
+	require.NoError(tb, err)
+
+	// sign the token
+	rawToken, _ := tok.Sign([]byte(secret))
+
+	req, _ := http.NewRequest(method, url, nil)
+	req.AddCookie(&http.Cookie{Name: cookieName, Value: rawToken})
+
+	return req, tok
 }

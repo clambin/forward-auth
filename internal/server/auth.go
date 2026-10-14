@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/forwardauth"
 )
 
@@ -20,12 +21,10 @@ const (
 // handleForwardAuth is the main handler for the forward-auth middleware.
 // It authenticates the user by validating the JWT token in the session cookie:
 // - If the token has expired, the token manager attempts to refresh the token.
-// - If the token is invalid, or could not be refreshed, the user is redirected to the OIDC login page to create a new session.
+// - If the token is invalid or could not be refreshed, the user is redirected to the OIDC login page to create a new session.
 // Once the user is authenticated, the request is authorized and the request is forwarded to the original destination.
 func handleForwardAuth(
-	cookieName string,
-	key []byte,
-	domain string,
+	cfg configuration.ServerConfiguration,
 	handler *forwardauth.Handler,
 	authenticator Authenticator,
 	logger *slog.Logger,
@@ -58,21 +57,15 @@ func handleForwardAuth(
 			http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 		}
 
-		// get the jwt token
-		cookie, err := r.Cookie(cookieName)
+		// extract token from cookie
+		token, err := tokenFromCookie(r, cfg.CookieName, []byte(cfg.Key))
 		if err != nil {
-			reqLogger.Debug("no token in cookie. redirecting to login page")
-			redirectToLogin(originalURL)
-			return
-		}
-		signedToken := cookie.Value
-		token, err := forwardauth.ParseToken(signedToken, key)
-		if err != nil {
-			reqLogger.Error("invalid token in cookie. redirecting to login page", slog.Any("err", err))
+			reqLogger.Error("missing / invalid token in cookie. redirecting to login page", slog.Any("err", err))
 			redirectToLogin(originalURL)
 			return
 		}
 
+		// validate the token
 		newToken, err := handler.Validate(r.Context(), token, r)
 		switch {
 		case errors.Is(err, forwardauth.ErrNotAllowed):
@@ -94,10 +87,10 @@ func handleForwardAuth(
 		}
 		// if the token was updated, resign the token
 		if newToken.ID != token.ID {
-			reqLogger.Debug("token updated. resigning token")
+			reqLogger.Debug("token updated")
 			// we know the token can be signed because we created it in handleLogin()
-			signedToken, _ = newToken.Sign(key)
-			setTokenCookie(w, cookieName, signedToken, domain)
+			signedToken, _ := newToken.Sign([]byte(cfg.Key))
+			setTokenCookie(w, cfg.CookieName, signedToken, cfg.Domain)
 		}
 
 		setUserHeaders(w, token, handler.GroupsForUser(token.Identity.Email))
@@ -109,9 +102,7 @@ func handleForwardAuth(
 // It establishes a session through a JWT token and redirects the user to the original destination.
 // This will trigger another call to forwardAuthHandler, which authenticates the user and authorizes the request.
 func handleLogin(
-	cookieName string,
-	key []byte,
-	domain string,
+	cfg configuration.ServerConfiguration,
 	handler *forwardauth.Handler,
 	authenticator Authenticator,
 	logger *slog.Logger,
@@ -146,14 +137,14 @@ func handleLogin(
 			return
 		}
 
-		signedToken, err := tok.Sign(key)
+		signedToken, err := tok.Sign([]byte(cfg.Key))
 		if err != nil {
 			ulog.Error("failed to sign token", slog.Any("err", err))
 			http.Error(w, "failed to create session", http.StatusInternalServerError)
 			return
 		}
 
-		setTokenCookie(w, cookieName, signedToken, domain)
+		setTokenCookie(w, cfg.CookieName, signedToken, cfg.Domain)
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 		ulog.Info("login successful")
 	})
@@ -184,4 +175,14 @@ func setUserHeaders(w http.ResponseWriter, token forwardauth.Token, groups []str
 		slices.Sort(groups)
 		w.Header().Set(forwardedUserGroupsHeader, strings.Join(groups, ","))
 	}
+}
+
+func tokenFromCookie(r *http.Request, cookieName string, key []byte) (forwardauth.Token, error) {
+	// get the jwt token
+	cookie, err := r.Cookie(cookieName)
+	if err != nil {
+		return forwardauth.Token{}, err
+	}
+	// parse the token
+	return forwardauth.ParseToken(cookie.Value, key)
 }

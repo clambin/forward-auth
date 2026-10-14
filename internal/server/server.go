@@ -36,9 +36,7 @@ func New(
 	mux.Handle("/api/auth/forwardauth",
 		metrics.InstrumentedHandler("forwardauth")(
 			handleForwardAuth(
-				cfg.CookieName,
-				[]byte(cfg.Key),
-				cfg.Domain,
+				cfg,
 				handler,
 				authenticator,
 				logger.With(slog.String("handler", "forwardAuth")),
@@ -48,9 +46,7 @@ func New(
 	mux.Handle("/api/auth/login",
 		metrics.InstrumentedHandler("login")(
 			handleLogin(
-				cfg.CookieName,
-				[]byte(cfg.Key),
-				cfg.Domain,
+				cfg,
 				handler,
 				authenticator,
 				logger.With(slog.String("handler", "login")),
@@ -58,10 +54,11 @@ func New(
 		),
 	)
 
-	mux.Handle("/api/sessions/", http.StripPrefix("/api/sessions", handleSessions(
-		handler,
-		logger,
-	)))
+	mux.Handle("/api/sessions/",
+		http.StripPrefix("/api/sessions",
+			sessionsRoutes(cfg, handler, logger),
+		),
+	)
 
 	mux.Handle("/", web.New())
 

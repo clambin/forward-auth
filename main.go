@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
@@ -113,6 +114,13 @@ func main() {
 		return httputils.RunServer(ctx, &http.Server{
 			Addr:    cfg.Server.Addr,
 			Handler: server.New(cfg.Server, handler, authenticator, metrics, logger),
+		})
+	})
+	// pprof
+	g.Go(func() error {
+		return httputils.RunServer(ctx, &http.Server{
+			Addr:    ":6060",
+			Handler: http.DefaultServeMux,
 		})
 	})
 	if err = g.Wait(); err != nil {

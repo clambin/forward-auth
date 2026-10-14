@@ -43,5 +43,5 @@ func TestServer(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/api/sessions/list", nil)
 	resp = httptest.NewRecorder()
 	h.ServeHTTP(resp, req)
-	require.Equal(t, http.StatusForbidden, resp.Code)
+	require.Equal(t, http.StatusUnauthorized, resp.Code)
 }

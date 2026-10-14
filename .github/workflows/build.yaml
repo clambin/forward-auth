@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - main
-      - healthz
+      - sessions
 permissions:
   contents: read
   packages: write
