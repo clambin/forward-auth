@@ -129,13 +129,14 @@ func handleLogin(
 		ulog := logger.With(slog.String("user", userInfo.Email))
 		ulog.Debug("user validated successfully")
 
-		// create a token for the new session
+		// create a new session & token for the new session
 		tok, err := handler.CreateSession(r.Context(), userInfo, r)
 		if err != nil {
 			ulog.Error("failed to create token", slog.Any("err", err))
 			http.Error(w, "failed to create session", http.StatusInternalServerError)
 			return
 		}
+		ulog.Debug("session created", slog.String("session_id", tok.SessionID))
 
 		signedToken, err := tok.Sign([]byte(cfg.Key))
 		if err != nil {

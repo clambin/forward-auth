@@ -28,13 +28,13 @@ func TestServer(t *testing.T) {
 	h := New(cfg.Server, handler, an, observability.GetMetrics(), slog.New(slog.DiscardHandler))
 
 	// forward-auth
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/forwardauth", nil)
+	req := httptest.NewRequest(http.MethodGet, forwardAuthPath, nil)
 	resp := httptest.NewRecorder()
 	h.ServeHTTP(resp, req)
 	require.Equal(t, http.StatusSeeOther, resp.Code)
 
 	// login
-	req = httptest.NewRequest(http.MethodGet, "/api/auth/login", nil)
+	req = httptest.NewRequest(http.MethodGet, loginPath, nil)
 	resp = httptest.NewRecorder()
 	h.ServeHTTP(resp, req)
 	require.Equal(t, http.StatusBadRequest, resp.Code)

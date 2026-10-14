@@ -9,20 +9,17 @@ import (
 	"time"
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
-	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/clambin/forward-auth/internal/forwardauth"
 )
 
 func sessionsRoutes(
-	cfg configuration.ServerConfiguration,
 	handler *forwardauth.Handler,
 	logger *slog.Logger,
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /list", handleListSessions(handler, logger.With("handler", "listSessions")))
 	mux.Handle("DELETE /session/{id}", handleDeleteSession(handler, logger.With("handler", "deleteSession")))
-
-	return withForwardAuthToken(cfg.CookieName, []byte(cfg.Key), strictTokenMode)(mux)
+	return mux
 }
 
 type listSessionsResponseItem struct {

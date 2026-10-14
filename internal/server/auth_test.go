@@ -114,17 +114,18 @@ func TestHandleForwardAuth(t *testing.T) {
 				Key:        validKey,
 				Domain:     ".example.com",
 			}
-			var fAuthn fakeAuthenticator
 			fAuthz := fakeAuthorizer{allow: tt.allow}
 			handler, _ := forwardauth.New(time.Hour, &fAuthz, configuration.StorageConfiguration{})
 
-			h := withForwardAuthToken(cfg.CookieName, []byte(cfg.Key), laxTokenMode)(
-				handleForwardAuth(
-					cfg,
-					handler,
-					&fAuthn,
-					slog.New(slog.DiscardHandler),
-				),
+			h := New(
+				cfg,
+				handler,
+				&fakeAuthenticator{
+					states: make(map[string]string),
+					codes:  make(map[string]struct{}),
+				},
+				observability.GetMetrics(),
+				slog.New(slog.DiscardHandler),
 			)
 
 			req := forwardAuthRequest("https://example.com/?mode=true")
@@ -206,12 +207,11 @@ func BenchmarkForwardAuthHandler(b *testing.B) {
 	// Token in request context:
 	// BenchmarkForwardAuthHandler-10    	  271161	      4400 ns/op	    6335 B/op	      69 allocs/op
 	const cookieName = "test"
-	var fAuthn fakeAuthenticator
 	handler, _ := forwardauth.New(time.Hour, &fakeAuthorizer{allow: true}, configuration.StorageConfiguration{})
-	s := New(
+	h := New(
 		configuration.ServerConfiguration{CookieName: cookieName, Key: "secret", Domain: ".example.com"},
 		handler,
-		&fAuthn,
+		&fakeAuthenticator{},
 		&fakeMetrics{},
 		slog.New(slog.DiscardHandler),
 	)
@@ -229,7 +229,7 @@ func BenchmarkForwardAuthHandler(b *testing.B) {
 	for b.Loop() {
 		reqC := req.Clone(b.Context())
 		resp := httptest.NewRecorder()
-		s.ServeHTTP(resp, reqC)
+		h.ServeHTTP(resp, reqC)
 		if resp.Code != http.StatusOK {
 			b.Fatal("should be OK")
 		}
@@ -270,21 +270,20 @@ func TestHandleLogin(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fa := fakeAuthenticator{
-				states: map[string]string{"4321": "/"},
-				codes:  map[string]struct{}{"1234": {}},
-			}
 			cfg := configuration.ServerConfiguration{
 				CookieName: "test",
 				Domain:     ".example.com",
 				Key:        "secret",
 			}
-			const cookieName = "test"
 			handler, _ := forwardauth.New(time.Hour, nil, configuration.StorageConfiguration{})
-			h := handleLogin(
+			h := New(
 				cfg,
 				handler,
-				&fa,
+				&fakeAuthenticator{
+					states: map[string]string{"4321": "/"},
+					codes:  map[string]struct{}{"1234": {}},
+				},
+				observability.GetMetrics(),
 				slog.New(slog.DiscardHandler),
 			)
 
@@ -300,7 +299,7 @@ func TestHandleLogin(t *testing.T) {
 			require.Equal(t, tt.want.location, resp.Header().Get("Location"))
 			cookies := resp.Result().Cookies()
 			require.Len(t, cookies, 1)
-			require.Equal(t, cookieName, cookies[0].Name)
+			require.Equal(t, cfg.CookieName, cookies[0].Name)
 			assert.NotZero(t, cookies[0].Value)
 		})
 	}
@@ -312,7 +311,7 @@ func forwardAuthRequest(s string) *http.Request {
 	if u.RawQuery != "" {
 		path += "?" + u.RawQuery
 	}
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/forwardauth", nil)
+	req := httptest.NewRequest(http.MethodGet, forwardAuthPath, nil)
 	req.Header.Set("X-Forwarded-Uri", path)
 	req.Header.Set("X-Forwarded-Proto", u.Scheme)
 	req.Header.Set("X-Forwarded-Host", u.Host)

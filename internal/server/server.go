@@ -12,6 +12,11 @@ import (
 	"github.com/clambin/forward-auth/internal/server/web"
 )
 
+const (
+	forwardAuthPath = "/api/auth/forwardauth"
+	loginPath       = "/api/auth/login"
+)
+
 type Authenticator interface {
 	InitiateLogin(ctx context.Context, url string) (string, error)
 	ConfirmLogin(ctx context.Context, state, code string) (provider.Identity, string, error)
@@ -33,7 +38,7 @@ func New(
 ) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.Handle("/api/auth/forwardauth",
+	mux.Handle(forwardAuthPath,
 		metrics.InstrumentedHandler("forwardauth")(
 			withForwardAuthToken(cfg.CookieName, []byte(cfg.Key), laxTokenMode)(
 				handleForwardAuth(
@@ -45,7 +50,7 @@ func New(
 			),
 		),
 	)
-	mux.Handle("/api/auth/login",
+	mux.Handle(loginPath,
 		metrics.InstrumentedHandler("login")(
 			handleLogin(
 				cfg,
@@ -58,7 +63,9 @@ func New(
 
 	mux.Handle("/api/sessions/",
 		http.StripPrefix("/api/sessions",
-			sessionsRoutes(cfg, handler, logger),
+			withForwardAuthToken(cfg.CookieName, []byte(cfg.Key), strictTokenMode)(
+				sessionsRoutes(handler, logger),
+			),
 		),
 	)
 
