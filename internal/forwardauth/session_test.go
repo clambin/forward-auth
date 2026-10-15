@@ -85,7 +85,7 @@ func TestSessions(t *testing.T) {
 			s.RotatedAt = time.Now().Add(-refreshTokenGracePeriod - time.Second)
 			require.NoError(t, sessions.put(ctx, token.Identity.Email, token.SessionID, s))
 			_, err = sessions.validateToken(ctx, previousToken, req)
-			require.ErrorIs(t, err, ErrInvalidRefreshToken)
+			require.ErrorIs(t, err, ErrPreviousRefreshTokenExpired)
 			// the current refresh token is still accepted
 			token, err = sessions.validateToken(ctx, token, req)
 			require.NoError(t, err)

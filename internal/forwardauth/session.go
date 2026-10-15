@@ -146,7 +146,7 @@ func (m Sessions) rotateRefreshToken(token Token, session Session) (Token, Sessi
 		// previous refresh token: the refresh token was already rotated by another request.
 		// only accept it during the grace period after rotation.
 		if now.Sub(session.RotatedAt) > refreshTokenGracePeriod {
-			return Token{}, Session{}, ErrInvalidRefreshToken
+			return Token{}, Session{}, ErrPreviousRefreshTokenExpired
 		}
 		// next() returns the same successor i.e., the current refresh token.
 		token.RefreshToken = token.RefreshToken.next(session.RefreshSecret)

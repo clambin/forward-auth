@@ -14,9 +14,10 @@ import (
 )
 
 var (
-	ErrSessionNotFound     = errors.New("session not found")
-	ErrInvalidRefreshToken = errors.New("invalid refresh token")
-	ErrNotAllowed          = errors.New("user is not allowed to access the requested resource")
+	ErrSessionNotFound             = errors.New("session not found")
+	ErrInvalidRefreshToken         = errors.New("invalid refresh token")
+	ErrPreviousRefreshTokenExpired = errors.New("expired previous refresh token")
+	ErrNotAllowed                  = errors.New("user is not allowed to access the requested resource")
 )
 
 type Authorizer interface {

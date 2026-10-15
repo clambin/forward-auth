@@ -47,10 +47,11 @@ func handleForwardAuth(
 			),
 		)
 
-		redirectToLogin := func(originalURL *url.URL) {
+		redirectToLogin := func(originalURL *url.URL, l *slog.Logger) {
+			l.Debug("redirecting to login page")
 			redirectURL, err := authenticator.InitiateLogin(r.Context(), originalURL.String())
 			if err != nil {
-				reqLogger.Error("failed to initiate login", slog.Any("err", err))
+				l.Error("failed to initiate login", slog.Any("err", err))
 				http.Error(w, "failed to initiate login", http.StatusInternalServerError)
 				return
 			}
@@ -60,8 +61,8 @@ func handleForwardAuth(
 		// extract token from cookie
 		token, err := tokenFromRequest(r)
 		if err != nil && !errors.Is(err, ErrTokenExpired) {
-			reqLogger.Error("missing / invalid token in cookie. redirecting to login page", slog.Any("err", err))
-			redirectToLogin(originalURL)
+			reqLogger.Error("missing / invalid token in cookie", slog.Any("err", err))
+			redirectToLogin(originalURL, reqLogger)
 			return
 		}
 
@@ -72,13 +73,12 @@ func handleForwardAuth(
 			reqLogger.Debug("access forbidden")
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
-		case errors.Is(err, forwardauth.ErrInvalidRefreshToken):
-			reqLogger.Debug("invalid token. redirecting to login page")
-			redirectToLogin(originalURL)
-			return
-		case errors.Is(err, forwardauth.ErrSessionNotFound):
-			reqLogger.Debug("session not found. redirecting to login page")
-			redirectToLogin(originalURL)
+		case errors.Is(err, forwardauth.ErrPreviousRefreshTokenExpired),
+			errors.Is(err, forwardauth.ErrInvalidRefreshToken),
+			errors.Is(err, forwardauth.ErrSessionNotFound):
+			// TODO: we're rejecting the token and asking the user to login again. should we delete the session?
+			reqLogger.Debug("invalid token received", slog.Any("err", err))
+			redirectToLogin(originalURL, reqLogger)
 			return
 		case err != nil:
 			reqLogger.Error("failed to validate token", slog.Any("err", err))
