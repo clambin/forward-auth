@@ -47,3 +47,7 @@ func (f fakeRedisClient) Ping(ctx context.Context) *redis.StatusCmd {
 	cmd.SetErr(f.err)
 	return cmd
 }
+
+func (f fakeRedisClient) Close() error {
+	return nil
+}

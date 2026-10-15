@@ -1,7 +1,6 @@
 package server
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -47,54 +46,18 @@ func handleForwardAuth(
 			),
 		)
 
-		redirectToLogin := func(originalURL *url.URL, l *slog.Logger) {
-			l.Debug("redirecting to login page")
-			redirectURL, err := authenticator.InitiateLogin(r.Context(), originalURL.String())
-			if err != nil {
-				l.Error("failed to initiate login", slog.Any("err", err))
-				http.Error(w, "failed to initiate login", http.StatusInternalServerError)
-				return
-			}
-			http.Redirect(w, r, redirectURL, http.StatusSeeOther)
-		}
+		// make a copy of the request (which contains the cookie) and restore the original method and URL
+		req := r.Clone(r.Context())
+		req.Method = originalMethod
+		req.URL = originalURL
 
-		// extract token from cookie
-		token, err := tokenFromRequest(r)
-		if err != nil && !errors.Is(err, ErrTokenExpired) {
-			reqLogger.Error("missing / invalid token in cookie", slog.Any("err", err))
-			redirectToLogin(originalURL, reqLogger)
-			return
+		// perform forward auth
+		token, err := forwardAuth(w, req, cfg, handler, authenticator, reqLogger)
+		if err == nil {
+			// if successful, set user headers and return OK to the forward Auth middleware
+			setUserHeaders(w, token, handler.GroupsForUser(token.Identity.Email))
+			w.WriteHeader(http.StatusOK)
 		}
-
-		// validate the token
-		newToken, err := handler.Validate(r.Context(), token, r)
-		switch {
-		case errors.Is(err, forwardauth.ErrNotAllowed):
-			reqLogger.Debug("access forbidden")
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		case errors.Is(err, forwardauth.ErrPreviousRefreshTokenExpired),
-			errors.Is(err, forwardauth.ErrInvalidRefreshToken),
-			errors.Is(err, forwardauth.ErrSessionNotFound):
-			// TODO: we're rejecting the token and asking the user to login again. should we delete the session?
-			reqLogger.Debug("invalid token received", slog.Any("err", err))
-			redirectToLogin(originalURL, reqLogger)
-			return
-		case err != nil:
-			reqLogger.Error("failed to validate token", slog.Any("err", err))
-			http.Error(w, "failed to validate token", http.StatusInternalServerError)
-			return
-		}
-		// if the token was updated, resign the token
-		if newToken.ID != token.ID {
-			reqLogger.Debug("token updated")
-			// we know the token can be signed because we created it in handleLogin()
-			signedToken, _ := newToken.Sign([]byte(cfg.Key))
-			setTokenCookie(w, cfg.CookieName, signedToken, cfg.Domain)
-		}
-
-		setUserHeaders(w, token, handler.GroupsForUser(token.Identity.Email))
-		w.WriteHeader(http.StatusOK)
 	})
 }
 
@@ -176,4 +139,15 @@ func setUserHeaders(w http.ResponseWriter, token forwardauth.Token, groups []str
 		slices.Sort(groups)
 		w.Header().Set(forwardedUserGroupsHeader, strings.Join(groups, ","))
 	}
+}
+
+func redirectToLogin(w http.ResponseWriter, r *http.Request, authenticator Authenticator, originalURL *url.URL, l *slog.Logger) {
+	l.Debug("redirecting to login page")
+	redirectURL, err := authenticator.InitiateLogin(r.Context(), originalURL.String())
+	if err != nil {
+		l.Error("failed to initiate login", slog.Any("err", err))
+		http.Error(w, "failed to initiate login", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }

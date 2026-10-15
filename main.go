@@ -68,6 +68,7 @@ func main() {
 			Password: cfg.Storage.Redis.Password,
 			DB:       cfg.Storage.Redis.DB,
 		})
+		defer func() { _ = redisClient.Close() }()
 	}
 
 	logger.Info("starting forward-auth", "version", version)

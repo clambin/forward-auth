@@ -57,5 +57,5 @@ func TestServer(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/api/sessions/list", nil)
 	resp = httptest.NewRecorder()
 	hExt.ServeHTTP(resp, req)
-	require.Equal(t, http.StatusUnauthorized, resp.Code)
+	require.Equal(t, http.StatusSeeOther, resp.Code)
 }

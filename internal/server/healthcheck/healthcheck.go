@@ -10,6 +10,7 @@ import (
 
 type RedisClient interface {
 	Ping(ctx context.Context) *redis.StatusCmd
+	Close() error
 }
 
 // Handler returns a healthCheck handler. If the Redis client is not nil, it pings the server.

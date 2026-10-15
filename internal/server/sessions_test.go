@@ -24,13 +24,13 @@ func TestHandleListSessions(t *testing.T) {
 		Key:        "secret",
 	}
 
-	mgr, err := forwardauth.New(time.Hour, nil, configuration.StorageConfiguration{})
+	handler, err := forwardauth.New(time.Hour, &fakeAuthorizer{allow: true}, configuration.StorageConfiguration{})
 	require.NoError(t, err)
-	h := withForwardAuthToken(cfg.CookieName, []byte(cfg.Key), strictTokenMode)(
-		routeSessions(mgr, slog.New(slog.DiscardHandler)),
+	h := withForwardAuthToken(cfg, handler, &fakeAuthenticator{}, slog.New(slog.DiscardHandler))(
+		routeSessions(handler, slog.New(slog.DiscardHandler)),
 	)
 
-	req, _ := createRequest(t, mgr, username, cfg.CookieName, cfg.Key, http.MethodGet, "/list")
+	req, _ := createRequest(t, handler, username, cfg.CookieName, cfg.Key, http.MethodGet, "/list")
 	resp := httptest.NewRecorder()
 	h.ServeHTTP(resp, req)
 
@@ -68,7 +68,7 @@ func TestHandleDeleteSession(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			handler, err := forwardauth.New(time.Hour, &fakeAuthorizer{allow: true}, configuration.StorageConfiguration{})
 			require.NoError(t, err)
-			h := withForwardAuthToken(cfg.CookieName, []byte(cfg.Key), strictTokenMode)(
+			h := withForwardAuthToken(cfg, handler, &fakeAuthenticator{}, slog.New(slog.DiscardHandler))(
 				routeSessions(handler, slog.New(slog.DiscardHandler)),
 			)
 			tokens := make(map[string]forwardauth.Token)

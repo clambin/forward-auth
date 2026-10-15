@@ -53,9 +53,7 @@ func routeInternal(
 	mux.Handle(cfg.HealthPath, healthCheck)
 	mux.Handle("/",
 		metrics.InstrumentedHandler("forwardauth")(
-			withForwardAuthToken(cfg.CookieName, []byte(cfg.Key), laxTokenMode)(
-				handleForwardAuth(cfg, forwardAuthHandler, authenticator, logger.With("handler", "forwardAuth")),
-			),
+			handleForwardAuth(cfg, forwardAuthHandler, authenticator, logger.With("handler", "forwardAuth")),
 		),
 	)
 	return mux
@@ -75,7 +73,7 @@ func routeExternal(
 				cfg,
 				handler,
 				authenticator,
-				logger.With("handler", "login"),
+				logger.With(slog.String("handler", "login")),
 			),
 		),
 	)
@@ -85,7 +83,7 @@ func routeExternal(
 			http.StripPrefix("/api/sessions",
 				routeSessions(
 					handler,
-					logger,
+					logger.With(slog.String("handler", "sessions")),
 				),
 			),
 		),
@@ -95,7 +93,7 @@ func routeExternal(
 			web.New(),
 		),
 	)
-	mux.Handle("/", withForwardAuthToken(cfg.CookieName, []byte(cfg.Key), strictTokenMode)(
+	mux.Handle("/", withForwardAuthToken(cfg, handler, authenticator, logger.With(slog.String("handler", "middleware")))(
 		authenticatedMux,
 	))
 	return mux

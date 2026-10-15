@@ -23,18 +23,6 @@ import (
 
 func TestHandleForwardAuth(t *testing.T) {
 	const validKey = "valid-key"
-	type generateTokenFunc func(tb testing.TB, h *forwardauth.Handler, req *http.Request) string
-	// generateToken generates a token, signed by key, with a delta time added to the expiration time
-	generateToken := func(key []byte, delta time.Duration) func(tb testing.TB, h *forwardauth.Handler, req *http.Request) string {
-		return func(tb testing.TB, h *forwardauth.Handler, req *http.Request) string {
-			tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, req)
-			require.NoError(tb, err)
-			tok.ExpiresAt.Time = tok.ExpiresAt.Add(delta)
-			rawToken, err := tok.Sign(key)
-			require.NoError(tb, err)
-			return rawToken
-		}
-	}
 
 	tests := []struct {
 		name  string
@@ -221,12 +209,8 @@ func BenchmarkForwardAuthHandler(b *testing.B) {
 	)
 
 	req := forwardAuthRequest("/")
-	tok, err := handler.CreateSession(b.Context(), provider.Identity{Email: "foo@example.com"}, req)
-	require.NoError(b, err)
-	rawToken, _ := tok.Sign([]byte("secret"))
-	require.NoError(b, err)
-	cookie := http.Cookie{Name: cookieName, Value: rawToken}
-	req.AddCookie(&cookie)
+	rawToken := generateToken([]byte("secret"), time.Hour)(b, handler, &http.Request{})
+	req.AddCookie(&http.Cookie{Name: cookieName, Value: rawToken})
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -387,4 +371,21 @@ type fakeMetrics struct{}
 
 func (f fakeMetrics) InstrumentedHandler(_ string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler { return next }
+}
+
+type generateTokenFunc func(tb testing.TB, h *forwardauth.Handler, req *http.Request) string
+
+var _ generateTokenFunc = generateToken([]byte{}, 0)
+
+// generateToken returns a test function that generates a token, signed by a key,
+// with a delta time added to the expiration time
+func generateToken(key []byte, delta time.Duration) func(tb testing.TB, h *forwardauth.Handler, req *http.Request) string {
+	return func(tb testing.TB, h *forwardauth.Handler, req *http.Request) string {
+		tok, err := h.CreateSession(tb.Context(), provider.Identity{Email: "foo@example.com"}, req)
+		require.NoError(tb, err)
+		tok.ExpiresAt.Time = tok.ExpiresAt.Add(delta)
+		rawToken, err := tok.Sign(key)
+		require.NoError(tb, err)
+		return rawToken
+	}
 }
