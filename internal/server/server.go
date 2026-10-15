@@ -13,8 +13,7 @@ import (
 )
 
 const (
-	forwardAuthPath = "/api/auth/forwardauth"
-	loginPath       = "/api/auth/login"
+	loginPath = "/api/auth/login"
 )
 
 type Authenticator interface {
@@ -34,42 +33,80 @@ func New(
 	handler *forwardauth.Handler,
 	authenticator Authenticator,
 	metrics Metrics,
+	healthzHandler http.Handler,
+	logger *slog.Logger,
+) (http.Handler, http.Handler) {
+	return routeInternal(cfg, handler, authenticator, metrics, healthzHandler, logger),
+		routeExternal(cfg, handler, authenticator, metrics, logger)
+}
+
+func routeInternal(
+	cfg configuration.ServerConfiguration,
+	forwardAuthHandler *forwardauth.Handler,
+	authenticator Authenticator,
+	metrics Metrics,
+	healthCheck http.Handler,
 	logger *slog.Logger,
 ) http.Handler {
+	// internal services
 	mux := http.NewServeMux()
-
-	mux.Handle(forwardAuthPath,
+	mux.Handle(cfg.HealthPath, healthCheck)
+	mux.Handle("/",
 		metrics.InstrumentedHandler("forwardauth")(
 			withForwardAuthToken(cfg.CookieName, []byte(cfg.Key), laxTokenMode)(
-				handleForwardAuth(
-					cfg,
-					handler,
-					authenticator,
-					logger.With(slog.String("handler", "forwardAuth")),
-				),
+				handleForwardAuth(cfg, forwardAuthHandler, authenticator, logger.With("handler", "forwardAuth")),
 			),
 		),
 	)
+	return mux
+}
+
+func routeExternal(
+	cfg configuration.ServerConfiguration,
+	handler *forwardauth.Handler,
+	authenticator Authenticator,
+	metrics Metrics,
+	logger *slog.Logger,
+) http.Handler {
+	mux := http.NewServeMux()
 	mux.Handle(loginPath,
 		metrics.InstrumentedHandler("login")(
 			handleLogin(
 				cfg,
 				handler,
 				authenticator,
-				logger.With(slog.String("handler", "login")),
+				logger.With("handler", "login"),
 			),
 		),
 	)
-
-	mux.Handle("/api/sessions/",
-		http.StripPrefix("/api/sessions",
-			withForwardAuthToken(cfg.CookieName, []byte(cfg.Key), strictTokenMode)(
-				sessionsRoutes(handler, logger),
+	authenticatedMux := http.NewServeMux()
+	authenticatedMux.Handle("/api/sessions/",
+		metrics.InstrumentedHandler("api")(
+			http.StripPrefix("/api/sessions",
+				routeSessions(
+					handler,
+					logger,
+				),
 			),
 		),
 	)
+	authenticatedMux.Handle("/",
+		metrics.InstrumentedHandler("web")(
+			web.New(),
+		),
+	)
+	mux.Handle("/", withForwardAuthToken(cfg.CookieName, []byte(cfg.Key), strictTokenMode)(
+		authenticatedMux,
+	))
+	return mux
+}
 
-	mux.Handle("/", web.New())
-
+func routeSessions(
+	handler *forwardauth.Handler,
+	logger *slog.Logger,
+) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("GET /list", handleListSessions(handler, logger.With("handler", "listSessions")))
+	mux.Handle("DELETE /session/{id}", handleDeleteSession(handler, logger.With("handler", "deleteSession")))
 	return mux
 }

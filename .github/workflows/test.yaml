@@ -4,6 +4,7 @@ on:
     branches-ignore:
       - main
       - sessions
+      - ports
   workflow_call:
     secrets:
       codecov-token:

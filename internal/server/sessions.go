@@ -12,16 +12,6 @@ import (
 	"github.com/clambin/forward-auth/internal/forwardauth"
 )
 
-func sessionsRoutes(
-	handler *forwardauth.Handler,
-	logger *slog.Logger,
-) http.Handler {
-	mux := http.NewServeMux()
-	mux.Handle("GET /list", handleListSessions(handler, logger.With("handler", "listSessions")))
-	mux.Handle("DELETE /session/{id}", handleDeleteSession(handler, logger.With("handler", "deleteSession")))
-	return mux
-}
-
 type listSessionsResponseItem struct {
 	SessionID string            `json:"id"`
 	Identity  provider.Identity `json:"user_info"`

@@ -27,7 +27,7 @@ func TestHandleListSessions(t *testing.T) {
 	mgr, err := forwardauth.New(time.Hour, nil, configuration.StorageConfiguration{})
 	require.NoError(t, err)
 	h := withForwardAuthToken(cfg.CookieName, []byte(cfg.Key), strictTokenMode)(
-		sessionsRoutes(mgr, slog.New(slog.DiscardHandler)),
+		routeSessions(mgr, slog.New(slog.DiscardHandler)),
 	)
 
 	req, _ := createRequest(t, mgr, username, cfg.CookieName, cfg.Key, http.MethodGet, "/list")
@@ -69,7 +69,7 @@ func TestHandleDeleteSession(t *testing.T) {
 			handler, err := forwardauth.New(time.Hour, &fakeAuthorizer{allow: true}, configuration.StorageConfiguration{})
 			require.NoError(t, err)
 			h := withForwardAuthToken(cfg.CookieName, []byte(cfg.Key), strictTokenMode)(
-				sessionsRoutes(handler, slog.New(slog.DiscardHandler)),
+				routeSessions(handler, slog.New(slog.DiscardHandler)),
 			)
 			tokens := make(map[string]forwardauth.Token)
 			requests := make(map[string]*http.Request)

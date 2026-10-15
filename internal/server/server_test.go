@@ -25,23 +25,37 @@ func TestServer(t *testing.T) {
 	an, err := authn.New(t.Context(), cfg)
 	require.NoError(t, err)
 
-	h := New(cfg.Server, handler, an, observability.GetMetrics(), slog.New(slog.DiscardHandler))
+	healthz := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	hInt, hExt := New(cfg.Server, handler, an, observability.GetMetrics(), healthz, slog.New(slog.DiscardHandler))
+
+	// internal
 
 	// forward-auth
-	req := httptest.NewRequest(http.MethodGet, forwardAuthPath, nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	resp := httptest.NewRecorder()
-	h.ServeHTTP(resp, req)
+	hInt.ServeHTTP(resp, req)
 	require.Equal(t, http.StatusSeeOther, resp.Code)
+
+	// health check
+	req = httptest.NewRequest(http.MethodGet, cfg.Server.HealthPath, nil)
+	resp = httptest.NewRecorder()
+	hInt.ServeHTTP(resp, req)
+	require.Equal(t, http.StatusOK, resp.Code)
+
+	// external
 
 	// login
 	req = httptest.NewRequest(http.MethodGet, loginPath, nil)
 	resp = httptest.NewRecorder()
-	h.ServeHTTP(resp, req)
+	hExt.ServeHTTP(resp, req)
 	require.Equal(t, http.StatusBadRequest, resp.Code)
 
 	// API
 	req = httptest.NewRequest(http.MethodGet, "/api/sessions/list", nil)
 	resp = httptest.NewRecorder()
-	h.ServeHTTP(resp, req)
+	hExt.ServeHTTP(resp, req)
 	require.Equal(t, http.StatusUnauthorized, resp.Code)
 }

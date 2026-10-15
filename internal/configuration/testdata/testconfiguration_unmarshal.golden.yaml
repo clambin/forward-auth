@@ -1,17 +1,16 @@
 server:
-  addr: :8080
   cookieName: forward-auth-session
   key: my-token-signing-key
   domain: ""
+  healthPath: /healthz
+  addrInt: :8080
+  addrExt: :8081
 logger:
   level: info
   format: text
 prometheus:
   addr: :9120
   path: /metrics
-health:
-  addr: :8888
-  path: /healthz
 storage:
   type: redis
   redis:

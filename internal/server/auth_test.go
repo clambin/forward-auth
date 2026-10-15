@@ -113,11 +113,12 @@ func TestHandleForwardAuth(t *testing.T) {
 				CookieName: "test",
 				Key:        validKey,
 				Domain:     ".example.com",
+				HealthPath: "/healthz",
 			}
 			fAuthz := fakeAuthorizer{allow: tt.allow}
 			handler, _ := forwardauth.New(time.Hour, &fAuthz, configuration.StorageConfiguration{})
 
-			h := New(
+			h, _ := New(
 				cfg,
 				handler,
 				&fakeAuthenticator{
@@ -125,6 +126,7 @@ func TestHandleForwardAuth(t *testing.T) {
 					codes:  make(map[string]struct{}),
 				},
 				observability.GetMetrics(),
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
 				slog.New(slog.DiscardHandler),
 			)
 
@@ -166,10 +168,10 @@ func TestForwardAuthHandler_Headers(t *testing.T) {
 				CookieName: "test",
 				Key:        "my-signing-key",
 				Domain:     ".example.com",
+				HealthPath: "/healthz",
 			}
 			handler, _ := forwardauth.New(5*time.Minute, &fakeAuthorizer{allow: true, groups: tt.groups}, configuration.StorageConfiguration{})
-
-			h := New(
+			h, _ := New(
 				cfg,
 				handler,
 				&fakeAuthenticator{
@@ -177,6 +179,7 @@ func TestForwardAuthHandler_Headers(t *testing.T) {
 					codes:  make(map[string]struct{}),
 				},
 				observability.GetMetrics(),
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
 				slog.New(slog.DiscardHandler),
 			)
 
@@ -208,11 +211,12 @@ func BenchmarkForwardAuthHandler(b *testing.B) {
 	// BenchmarkForwardAuthHandler-10    	  271161	      4400 ns/op	    6335 B/op	      69 allocs/op
 	const cookieName = "test"
 	handler, _ := forwardauth.New(time.Hour, &fakeAuthorizer{allow: true}, configuration.StorageConfiguration{})
-	h := New(
-		configuration.ServerConfiguration{CookieName: cookieName, Key: "secret", Domain: ".example.com"},
+	h, _ := New(
+		configuration.ServerConfiguration{CookieName: cookieName, Key: "secret", Domain: ".example.com", HealthPath: "/healthz"},
 		handler,
 		&fakeAuthenticator{},
 		&fakeMetrics{},
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
 		slog.New(slog.DiscardHandler),
 	)
 
@@ -274,9 +278,10 @@ func TestHandleLogin(t *testing.T) {
 				CookieName: "test",
 				Domain:     ".example.com",
 				Key:        "secret",
+				HealthPath: "/healthz",
 			}
 			handler, _ := forwardauth.New(time.Hour, nil, configuration.StorageConfiguration{})
-			h := New(
+			_, h := New(
 				cfg,
 				handler,
 				&fakeAuthenticator{
@@ -284,6 +289,7 @@ func TestHandleLogin(t *testing.T) {
 					codes:  map[string]struct{}{"1234": {}},
 				},
 				observability.GetMetrics(),
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
 				slog.New(slog.DiscardHandler),
 			)
 
@@ -311,7 +317,7 @@ func forwardAuthRequest(s string) *http.Request {
 	if u.RawQuery != "" {
 		path += "?" + u.RawQuery
 	}
-	req := httptest.NewRequest(http.MethodGet, forwardAuthPath, nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("X-Forwarded-Uri", path)
 	req.Header.Set("X-Forwarded-Proto", u.Scheme)
 	req.Header.Set("X-Forwarded-Host", u.Host)

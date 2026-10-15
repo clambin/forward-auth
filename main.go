@@ -95,25 +95,32 @@ func main() {
 		},
 	)
 
+	hInt, hExt := server.New(
+		cfg.Server,
+		handler,
+		authenticator,
+		metrics,
+		healthcheck.Handler(redisClient, logger.With("component", "healthcheck")),
+		logger,
+	)
+
 	var g errgroup.Group
 	// Prometheus
 	g.Go(func() error {
 		return cfg.Prometheus.RunServer(ctx)
 	})
-	// Health Check
+	// Internal handlers
 	g.Go(func() error {
-		mux := http.NewServeMux()
-		mux.Handle(cfg.Health.Path, healthcheck.Handler(redisClient, logger.With("component", "healthcheck")))
 		return httputils.RunServer(ctx, &http.Server{
-			Addr:    cfg.Health.Addr,
-			Handler: mux,
+			Addr:    cfg.Server.AddrInt,
+			Handler: hInt,
 		})
 	})
-	// forward-auth
+	// External handlers
 	g.Go(func() error {
 		return httputils.RunServer(ctx, &http.Server{
-			Addr:    cfg.Server.Addr,
-			Handler: server.New(cfg.Server, handler, authenticator, metrics, logger),
+			Addr:    cfg.Server.AddrExt,
+			Handler: hExt,
 		})
 	})
 	// pprof
