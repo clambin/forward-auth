@@ -15,6 +15,7 @@ import (
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -114,7 +115,11 @@ type PrometheusConfiguration struct {
 // The server is shut down when the context is canceled.
 func (c PrometheusConfiguration) RunServer(ctx context.Context) error {
 	mux := http.NewServeMux()
-	mux.Handle(cmp.Or(c.Path, "/metrics"), promhttp.Handler())
+	mux.Handle(cmp.Or(c.Path, "/metrics"), promhttp.HandlerFor(
+		prometheus.DefaultGatherer,
+		// test: reduce memory usage (especially flate.NewWriter() and flate (*compressor) init())
+		promhttp.HandlerOpts{DisableCompression: true},
+	))
 	return httputils.RunServer(ctx, &http.Server{
 		Addr:    c.Addr,
 		Handler: mux,
