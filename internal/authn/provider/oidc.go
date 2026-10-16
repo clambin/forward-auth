@@ -68,16 +68,10 @@ func (o *oidcProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (Id
 	return id, nil
 }
 
-func getIdentityFromToken(ctx context.Context, v *oidc.IDTokenVerifier, rawIDToken string) (Identity, error) {
-	idToken, err := v.Verify(ctx, rawIDToken)
-	if err != nil {
-		return Identity{}, fmt.Errorf("verify id token: %w", err)
+func getIdentityFromToken(ctx context.Context, v *oidc.IDTokenVerifier, rawIDToken string) (id Identity, err error) {
+	var idToken *oidc.IDToken
+	if idToken, err = v.Verify(ctx, rawIDToken); err == nil {
+		err = idToken.Claims(&id)
 	}
-
-	var id Identity
-	if err = idToken.Claims(&id); err != nil {
-		return Identity{}, fmt.Errorf("parse claims: %w", err)
-	}
-
-	return id, nil
+	return id, err
 }

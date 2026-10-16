@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
-	"github.com/clambin/forward-auth/internal/forwardauth"
+	"github.com/clambin/forward-auth/internal/session"
 )
 
 type listSessionsResponseItem struct {
@@ -20,16 +20,19 @@ type listSessionsResponseItem struct {
 }
 
 func handleListSessions(
-	handler *forwardauth.Handler,
+	handler session.Sessions,
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// get the token, which contains the user email.
-		// handleSessions runs WithForwardAuthToken in strict mode, so we can trust the token is present and valid.
-		token, _ := tokenFromRequest(r)
+		// get the authenticated user
+		identity, ok := session.AuthenticatedUser(r)
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 
 		// list sessions for the authenticated user
-		sessions, err := handler.List(r.Context(), token.Identity.Email)
+		sessions, err := handler.List(r.Context(), identity.Email)
 		if err != nil {
 			logger.Error("failed to list sessions", "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -56,20 +59,22 @@ func handleListSessions(
 }
 
 func handleDeleteSession(
-	handler *forwardauth.Handler,
+	handler session.Sessions,
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// get the token, which contains the user email.
-		// handleSessions runs WithForwardAuthToken in strict mode, so we can trust the token is present and valid.
-		token, _ := tokenFromRequest(r)
-
+		// get the authenticated user
+		identity, ok := session.AuthenticatedUser(r)
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		// if session id is missing, the http router will not match to this route and sends a 404 directly.
 		id := r.PathValue("id")
 		// Delete checks that the session is associated with the user
-		username := token.Identity.Email
+		username := identity.Email
 		if err := handler.DeleteSession(r.Context(), username, id); err != nil {
-			if errors.Is(err, forwardauth.ErrSessionNotFound) {
+			if errors.Is(err, session.ErrSessionNotFound) {
 				http.Error(w, "session not found", http.StatusNotFound)
 				return
 			}

@@ -11,7 +11,7 @@ import (
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/configuration"
-	"github.com/clambin/forward-auth/internal/forwardauth"
+	"github.com/clambin/forward-auth/internal/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,24 +24,38 @@ func TestHandleListSessions(t *testing.T) {
 		Key:        "secret",
 	}
 
-	handler, err := forwardauth.New(time.Hour, &fakeAuthorizer{allow: true}, configuration.StorageConfiguration{})
-	require.NoError(t, err)
-	h := withForwardAuthToken(cfg, handler, &fakeAuthenticator{}, slog.New(slog.DiscardHandler))(
-		routeSessions(handler, slog.New(slog.DiscardHandler)),
+	sessions, err := session.New(
+		time.Hour,
+		cfg,
+		configuration.StorageConfiguration{},
+		nil,
+		slog.New(slog.DiscardHandler),
 	)
+	require.NoError(t, err)
+	_, err = sessions.CreateSession(t.Context(), provider.Identity{Email: username}, &http.Request{})
+	require.NoError(t, err)
 
-	req, _ := createRequest(t, handler, username, cfg.CookieName, cfg.Key, http.MethodGet, "/list")
+	h := routeSessions(sessions, slog.New(slog.DiscardHandler))
+
+	req, _ := http.NewRequest(http.MethodGet, "/list", nil)
+	req = session.SetAuthenticatedUser(req, provider.Identity{Email: username})
 	resp := httptest.NewRecorder()
 	h.ServeHTTP(resp, req)
 
 	require.Equal(t, http.StatusOK, resp.Code)
 	require.Equal(t, "application/json", resp.Header().Get("Content-Type"))
 
-	var sessions []listSessionsResponseItem
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&sessions))
-	require.Len(t, sessions, 1)
-	assert.Equal(t, username, sessions[0].Identity.Email)
-	assert.NotZero(t, sessions[0].SessionID)
+	var sessionList []listSessionsResponseItem
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&sessionList))
+	require.Len(t, sessionList, 1)
+	assert.Equal(t, username, sessionList[0].Identity.Email)
+	assert.NotZero(t, sessionList[0].SessionID)
+
+	req, _ = http.NewRequest(http.MethodGet, "/list", nil)
+	resp = httptest.NewRecorder()
+	h.ServeHTTP(resp, req)
+	require.Equal(t, http.StatusUnauthorized, resp.Code)
+
 }
 
 func TestHandleDeleteSession(t *testing.T) {
@@ -56,33 +70,43 @@ func TestHandleDeleteSession(t *testing.T) {
 		name     string
 		path     string
 		username string
+		token    bool
 		want     int
 	}{
-		{"missing session id", "/session/", username, http.StatusNotFound},
-		{"wrong session id", "/session/invalid", username, http.StatusNotFound},
-		{"wrong user in header", "", invalidUsername, http.StatusNotFound},
-		{"valid", "", username, http.StatusNoContent},
+		{"missing session id in path", "/session/", username, true, http.StatusNotFound},
+		{"wrong session id in path", "/session/invalid", username, true, http.StatusNotFound},
+		{"no token", "", username, false, http.StatusUnauthorized},
+		{"wrong user in token", "", invalidUsername, true, http.StatusNotFound},
+		{"valid", "", username, true, http.StatusNoContent},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler, err := forwardauth.New(time.Hour, &fakeAuthorizer{allow: true}, configuration.StorageConfiguration{})
-			require.NoError(t, err)
-			h := withForwardAuthToken(cfg, handler, &fakeAuthenticator{}, slog.New(slog.DiscardHandler))(
-				routeSessions(handler, slog.New(slog.DiscardHandler)),
+			sessions, err := session.New(
+				time.Hour,
+				cfg,
+				configuration.StorageConfiguration{},
+				nil,
+				slog.New(slog.DiscardHandler),
 			)
-			tokens := make(map[string]forwardauth.Token)
-			requests := make(map[string]*http.Request)
+			require.NoError(t, err)
+			h := routeSessions(sessions, slog.New(slog.DiscardHandler))
+
+			tokens := make(map[string]session.Token)
 			for _, user := range []string{username, invalidUsername} {
-				requests[user], tokens[user] = createRequest(t, handler, user, cfg.CookieName, cfg.Key, http.MethodDelete, tt.path)
+				tokens[user], err = sessions.CreateSession(t.Context(), provider.Identity{Email: user}, &http.Request{})
+				require.NoError(t, err)
 			}
-			req := requests[username]
-			req.URL.Path = cmp.Or(tt.path, "/session/"+tokens[tt.username].SessionID)
+
+			req, _ := http.NewRequest(http.MethodDelete, cmp.Or(tt.path, "/session/"+tokens[tt.username].SessionID), nil)
+			if tt.token {
+				req = session.SetAuthenticatedUser(req, provider.Identity{Email: username})
+			}
 			resp := httptest.NewRecorder()
 			h.ServeHTTP(resp, req)
 			assert.Equal(t, tt.want, resp.Code)
 
-			count, _ := handler.Len(t.Context())
+			count, _ := sessions.Len(t.Context())
 			if resp.Code == http.StatusNoContent {
 				assert.Equal(t, 1, count)
 			} else {
@@ -90,26 +114,4 @@ func TestHandleDeleteSession(t *testing.T) {
 			}
 		})
 	}
-}
-
-func createRequest(
-	tb testing.TB,
-	mgr *forwardauth.Handler,
-	username string,
-	cookieName string,
-	secret string,
-	method string,
-	url string,
-) (*http.Request, forwardauth.Token) {
-	// create the session
-	tok, err := mgr.CreateSession(tb.Context(), provider.Identity{Email: username}, nil)
-	require.NoError(tb, err)
-
-	// sign the token
-	rawToken, _ := tok.Sign([]byte(secret))
-
-	req, _ := http.NewRequest(method, url, nil)
-	req.AddCookie(&http.Cookie{Name: cookieName, Value: rawToken})
-
-	return req, tok
 }

@@ -15,10 +15,10 @@ import (
 	"github.com/clambin/forward-auth/internal/authn"
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/clambin/forward-auth/internal/configuration"
-	"github.com/clambin/forward-auth/internal/forwardauth"
 	"github.com/clambin/forward-auth/internal/observability"
 	"github.com/clambin/forward-auth/internal/server"
 	"github.com/clambin/forward-auth/internal/server/healthcheck"
+	"github.com/clambin/forward-auth/internal/session"
 	"github.com/goccy/go-yaml"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
@@ -54,7 +54,7 @@ func main() {
 
 	authorizer := &authz.Authorizer{Rules: cfg.Authz.Rules, Groups: cfg.Authz.Groups}
 
-	handler, err := forwardauth.New(cfg.Session.SessionTTL, authorizer, cfg.Storage)
+	handler, err := session.New(cfg.Session.SessionTTL, cfg.Server, cfg.Storage, authenticator, logger.With("component", "sessions"))
 	if err != nil {
 		logger.Error("failed to create token manager cache", "err", err)
 		os.Exit(1)
@@ -99,7 +99,7 @@ func main() {
 	hInt, hExt := server.New(
 		cfg.Server,
 		handler,
-		authenticator,
+		authorizer,
 		metrics,
 		healthcheck.Handler(redisClient, logger.With("component", "healthcheck")),
 		logger,

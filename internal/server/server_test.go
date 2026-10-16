@@ -10,8 +10,8 @@ import (
 	"github.com/clambin/forward-auth/internal/authn"
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/clambin/forward-auth/internal/configuration"
-	"github.com/clambin/forward-auth/internal/forwardauth"
 	"github.com/clambin/forward-auth/internal/observability"
+	"github.com/clambin/forward-auth/internal/session"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,16 +20,18 @@ func TestServer(t *testing.T) {
 	// verify that each target reaches the right handler
 	cfg := configuration.DefaultConfiguration
 	cfg.Authn.Provider.Type = "github"
-	handler, err := forwardauth.New(5*time.Minute, &authz.Authorizer{Rules: cfg.Authz.Rules, Groups: cfg.Authz.Groups}, cfg.Storage)
-	require.NoError(t, err)
 	an, err := authn.New(t.Context(), cfg)
+	require.NoError(t, err)
+	az := &authz.Authorizer{Rules: cfg.Authz.Rules, Groups: cfg.Authz.Groups}
+	sessions, err := session.New(
+		5*time.Minute, cfg.Server, cfg.Storage, an, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 
 	healthz := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	hInt, hExt := New(cfg.Server, handler, an, observability.GetMetrics(), healthz, slog.New(slog.DiscardHandler))
+	hInt, hExt := New(cfg.Server, sessions, az, observability.GetMetrics(), healthz, slog.New(slog.DiscardHandler))
 
 	// internal
 
