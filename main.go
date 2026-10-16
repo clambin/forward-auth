@@ -5,7 +5,7 @@ import (
 	"errors"
 	"flag"
 	"net/http"
-	_ "net/http/pprof"
+	// _ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
@@ -124,13 +124,15 @@ func main() {
 			Handler: hExt,
 		})
 	})
-	// pprof
-	g.Go(func() error {
-		return httputils.RunServer(ctx, &http.Server{
-			Addr:    ":6060",
-			Handler: http.DefaultServeMux,
+	/*
+		// pprof
+		g.Go(func() error {
+			return httputils.RunServer(ctx, &http.Server{
+				Addr:    ":6060",
+				Handler: http.DefaultServeMux,
+			})
 		})
-	})
+	*/
 	if err = g.Wait(); err != nil {
 		logger.Error("failed to start server(s)", "err", err)
 	}
