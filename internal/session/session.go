@@ -188,27 +188,27 @@ func (m Sessions) DeleteSession(ctx context.Context, email string, sessionID str
 }
 
 // LoginHandler returns an http.Handler that handles the login request and creates a new session
-func (m Sessions) LoginHandler() http.Handler {
+func (m Sessions) LoginHandler(logger *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// use state & code to validate the login and retrieve the user info
 		state := r.URL.Query().Get("state")
 		code := r.URL.Query().Get("code")
 		if state == "" || code == "" {
-			m.logger.Warn("rejecting login request: missing state or code")
+			logger.Warn("rejecting login request: missing state or code")
 			http.Error(w, "missing state or code", http.StatusBadRequest)
 			return
 		}
 
-		m.logger.Debug("received valid login request")
+		logger.Debug("received valid login request")
 
 		userInfo, redirectURL, err := m.authenticator.ConfirmLogin(r.Context(), state, code)
 		if err != nil {
-			m.logger.Warn("rejecting login request: failed to validate login", slog.Any("err", err))
+			logger.Warn("rejecting login request: failed to validate login", slog.Any("err", err))
 			http.Error(w, "failed to validate login", http.StatusUnauthorized)
 			return
 		}
 
-		ulog := m.logger.With(slog.String("user", userInfo.Email))
+		ulog := logger.With(slog.String("user", userInfo.Email))
 		ulog.Debug("user validated successfully")
 
 		// create a new session & token for the new session
@@ -280,8 +280,9 @@ func (m Sessions) authenticateRequest(
 	case errors.Is(err, ErrPreviousRefreshTokenExpired),
 		errors.Is(err, ErrInvalidRefreshToken),
 		errors.Is(err, ErrSessionNotFound):
-		// TODO: we're rejecting the token and asking the user to login again. should we delete the session?
-		m.logger.Debug("invalid token received", slog.Any("err", err))
+		m.logger.Debug("rejecting invalid token", slog.Any("err", err))
+		// we're rejecting the token and asking the user to login again. delete the old session.
+		_ = m.DeleteSession(r.Context(), token.Identity.Email, token.SessionID)
 		m.redirectToLogin(w, r)
 		return provider.Identity{}, err
 	case err != nil:
@@ -307,8 +308,7 @@ func (m Sessions) redirectToLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to initiate login", http.StatusInternalServerError)
 		return
 	}
-	// TODO: remove this
-	m.logger.Debug("redirecting to login page", slog.String("redirect_url", redirectURL))
+	m.logger.Debug("redirecting to login page")
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 

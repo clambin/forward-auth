@@ -80,7 +80,7 @@ func routeExternal(
 	mux := http.NewServeMux()
 	mux.Handle(loginPath,
 		metrics.InstrumentedHandler("login")(
-			sessions.LoginHandler(), // TODO: logger for "login" handler
+			sessions.LoginHandler(logger.With("handler", "login")),
 		),
 	)
 	authenticatedMux := http.NewServeMux()

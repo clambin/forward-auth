@@ -235,10 +235,11 @@ func TestSessions_LoginHandler(t *testing.T) {
 				},
 				slog.New(slog.DiscardHandler),
 			)
+			handler := h.LoginHandler(slog.New(slog.DiscardHandler))
 
 			req := httptest.NewRequest(http.MethodGet, "/api/auth/login?"+tt.args.Encode(), nil)
 			resp := httptest.NewRecorder()
-			h.LoginHandler().ServeHTTP(resp, req)
+			handler.ServeHTTP(resp, req)
 			require.Equal(t, tt.want.code, resp.Code)
 
 			if tt.want.code != http.StatusSeeOther {
@@ -354,8 +355,6 @@ func TestSessions_ServerMiddleware(t *testing.T) {
 
 func BenchmarkSessions_ServerMiddleware(b *testing.B) {
 	// Current:
-	// BenchmarkForwardAuthHandler-10    	  283575	      4195 ns/op	    5764 B/op	      67 allocs/op
-	// Refactored:
 	// BenchmarkSessions_ServerMiddleware-10  337065	      3584 ns/op	    4684 B/op	      55 allocs/op
 	const cookieName = "test"
 	h, _ := New(
