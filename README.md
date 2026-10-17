@@ -187,8 +187,10 @@ forward-auth --config /path/to/config.yaml
 
 ```yaml
 server:
-  # HTTP server address. Default: ":8080".
-  addr: :8080
+  # HTTP server address for internal services (forward-auth, health check). Default: ":8080".
+  addrInt: :8080
+  # HTTP server address for external services (login, UI, api). Default: ":8081".
+  addrExt: :8081
   # HTTP Cookie Name. Default: "forward-auth-session".
   cookieName: forward-auth-session
   # Domain for which the cookie is valid. 
@@ -369,25 +371,10 @@ spec:
     - matches:
         - path:
             type: PathPrefix
-            value: /api/auth/login
-      backendRefs:
-        - name: forward-auth
-          port: 8080
-
-    # Everything else goes through middleware
-    - matches:
-        - path:
-            type: PathPrefix
             value: /
-      filters:
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: forward-auth
       backendRefs:
         - name: forward-auth
-          port: 8080
+          port: 8081
 ```
 
 ---

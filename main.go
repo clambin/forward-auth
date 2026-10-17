@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"net/http"
-	// _ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
@@ -60,7 +59,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	var redisClient healthcheck.RedisClient
+	var redisClient *redis.Client
 	if cfg.Storage.Type == "redis" {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     cfg.Storage.Redis.Addr,
@@ -124,15 +123,6 @@ func main() {
 			Handler: hExt,
 		})
 	})
-	/*
-		// pprof
-		g.Go(func() error {
-			return httputils.RunServer(ctx, &http.Server{
-				Addr:    ":6060",
-				Handler: http.DefaultServeMux,
-			})
-		})
-	*/
 	if err = g.Wait(); err != nil {
 		logger.Error("failed to start server(s)", "err", err)
 	}
