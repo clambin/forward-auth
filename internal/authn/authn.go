@@ -2,18 +2,11 @@ package authn
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 
-	"github.com/clambin/forward-auth/internal/authn/cache"
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"golang.org/x/oauth2"
-)
-
-const (
-	stateKeyPrefix = "forward-auth:state"
 )
 
 // Authenticator authenticates users and manages user sessions.
@@ -25,7 +18,7 @@ type Authenticator struct {
 
 // New creates a new Authenticator.
 func New(ctx context.Context, configuration configuration.Configuration) (*Authenticator, error) {
-	c, err := cache.New[string](configuration.Authn.StateTTL, stateKeyPrefix, configuration.Storage)
+	csrfStateStore, err := newStates(configuration.Authn.StateTTL, configuration.Storage)
 	if err != nil {
 		return nil, fmt.Errorf("state store: %w", err)
 	}
@@ -33,10 +26,9 @@ func New(ctx context.Context, configuration configuration.Configuration) (*Authe
 	if err != nil {
 		return nil, fmt.Errorf("authenticator: %w", err)
 	}
-
 	return &Authenticator{
 		selectAccount: configuration.Authn.SelectAccount,
-		states:        states{cache: c},
+		states:        csrfStateStore,
 		provider:      p,
 	}, nil
 }
@@ -82,32 +74,4 @@ func (m *Authenticator) ConfirmLogin(ctx context.Context, state string, code str
 
 func (m *Authenticator) Len(ctx context.Context) (int, error) {
 	return m.states.Len(ctx)
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-type states struct {
-	cache cache.Cache[string]
-}
-
-func (s *states) Allocate(ctx context.Context, value string) (string, error) {
-	state := makeRandomState()
-	return state, s.cache.Set(ctx, state, value)
-}
-
-func (s *states) Validate(ctx context.Context, state string) (string, error) {
-	return s.cache.GetAndDelete(ctx, state)
-}
-
-func (s *states) Len(ctx context.Context) (int, error) {
-	return s.cache.Len(ctx)
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-func makeRandomState() string {
-	const size = 32 // 256 bits
-	var b [size]byte
-	_, _ = rand.Read(b[:])
-	return hex.EncodeToString(b[:])
 }

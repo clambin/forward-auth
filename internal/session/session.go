@@ -74,7 +74,7 @@ func New(
 		})
 		store = &RedisStore{Client: redisClient, TTL: ttl}
 	default:
-		return Sessions{}, fmt.Errorf("unknown store type: %s", storageConfiguration.Type)
+		return Sessions{}, fmt.Errorf("invalid store type: %s", storageConfiguration.Type)
 	}
 
 	sessions := Sessions{

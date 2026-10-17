@@ -11,23 +11,26 @@ import (
 
 func TestProvider(t *testing.T) {
 	// OIDC
-	s, err := mockoidc.Run()
+	oidcServer, err := mockoidc.Run()
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = s.Shutdown() })
+	t.Cleanup(func() { _ = oidcServer.Shutdown() })
 	oidcCfg := Configuration{
 		Type: "oidc",
 		OIDC: OIDCConfiguration{
-			ClientID:     s.Config().ClientID,
-			ClientSecret: s.Config().ClientSecret,
-			IssuerURL:    s.Issuer(),
+			ClientID:     oidcServer.Config().ClientID,
+			ClientSecret: oidcServer.Config().ClientSecret,
+			IssuerURL:    oidcServer.Issuer(),
 		},
 	}
+	invalidOidcCfg := oidcCfg
+	invalidOidcCfg.OIDC.IssuerURL = ""
+
 	oidcCode := func(email string) string {
 		u := mockoidc.MockUser{
 			Email:         email,
 			EmailVerified: true,
 		}
-		session, err := s.SessionStore.NewSession("openid profile email", "", &u, "", "")
+		session, err := oidcServer.SessionStore.NewSession("openid profile email", "", &u, "", "")
 		require.NoError(t, err)
 		return session.SessionID
 	}
@@ -39,7 +42,8 @@ func TestProvider(t *testing.T) {
 		wantErr require.ErrorAssertionFunc
 	}{
 		{"oidc", oidcCfg, oidcCode, require.NoError},
-		{"invalid", Configuration{Type: "invalid"}, nil, require.Error},
+		{"oidc bad config", invalidOidcCfg, oidcCode, require.Error},
+		{"invalid type", Configuration{Type: "invalid"}, nil, require.Error},
 	}
 
 	for _, tt := range tests {

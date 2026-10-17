@@ -50,22 +50,15 @@ func (o *oidcProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (Id
 		if id, err = getIdentityFromToken(ctx, o.verifier, rawIDToken); err == nil {
 			return id, nil
 		}
-
-		// TODO: remove this log line once we have a better way to handle this.
 		slog.Warn("failed to get identity from id token. Using provider's user info endpoint instead", "err", err)
 	}
 
 	// Otherwise, use the access token to retrieve the user's Identity from the provider's user info endpoint.
 	userInfo, err := o.provider.UserInfo(ctx, oauth2.StaticTokenSource(token))
-	if err != nil {
-		return Identity{}, fmt.Errorf("get user info: %w", err)
+	if err == nil {
+		err = userInfo.Claims(&id)
 	}
-
-	if err = userInfo.Claims(&id); err != nil {
-		return Identity{}, fmt.Errorf("parse claims: %w", err)
-	}
-
-	return id, nil
+	return id, err
 }
 
 func getIdentityFromToken(ctx context.Context, v *oidc.IDTokenVerifier, rawIDToken string) (identity Identity, err error) {
