@@ -255,7 +255,7 @@ func TestSessions_LoginHandler(t *testing.T) {
 	}
 }
 
-func TestSessions_ServerMiddleware(t *testing.T) {
+func TestSessions_Authenticator(t *testing.T) {
 	const validKey = "valid-key"
 
 	tests := []struct {
