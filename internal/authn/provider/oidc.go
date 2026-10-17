@@ -76,5 +76,8 @@ func getIdentityFromToken(ctx context.Context, v *oidc.IDTokenVerifier, rawIDTok
 	if err != nil {
 		return Identity{}, nil
 	}
-	return id, err
+	if err != nil {
+		return Identity{}, err
+	}
+	return id, nil
 }
