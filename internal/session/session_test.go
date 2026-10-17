@@ -259,9 +259,10 @@ func TestSessions_ServerMiddleware(t *testing.T) {
 	const validKey = "valid-key"
 
 	tests := []struct {
-		name  string
-		token generateTokenFunc
-		want  int
+		name     string
+		token    generateTokenFunc
+		redirect bool
+		want     int
 	}{
 		{
 			name:  "valid session, allowed",
@@ -274,20 +275,28 @@ func TestSessions_ServerMiddleware(t *testing.T) {
 			want:  http.StatusOK,
 		},
 		{
-			name:  "invalid signature on jwt",
-			token: generateTestToken([]byte("wrong-key"), 0),
-			want:  http.StatusSeeOther,
+			name:     "invalid signature on jwt",
+			token:    generateTestToken([]byte("wrong-key"), 0),
+			redirect: true,
+			want:     http.StatusSeeOther,
 		},
 		{
-			name: "missing token",
-			want: http.StatusSeeOther,
+			name:     "missing token, redirect",
+			redirect: true,
+			want:     http.StatusSeeOther,
+		},
+		{
+			name:     "missing token, auth error",
+			redirect: false,
+			want:     http.StatusUnauthorized,
 		},
 		{
 			name: "invalid cookie",
 			token: func(tb testing.TB, h Sessions, req *http.Request) string {
 				return "invalid"
 			},
-			want: http.StatusSeeOther,
+			redirect: true,
+			want:     http.StatusSeeOther,
 		},
 		{
 			name: "no session",
@@ -299,7 +308,8 @@ func TestSessions_ServerMiddleware(t *testing.T) {
 				require.NoError(tb, h.DeleteSession(t.Context(), tok.Identity.Email, tok.SessionID))
 				return rawToken
 			},
-			want: http.StatusSeeOther,
+			redirect: true,
+			want:     http.StatusSeeOther,
 		},
 		{
 			name: "unrecognized refresh token",
@@ -311,7 +321,8 @@ func TestSessions_ServerMiddleware(t *testing.T) {
 				require.NoError(tb, err)
 				return rawToken
 			},
-			want: http.StatusSeeOther,
+			redirect: true,
+			want:     http.StatusSeeOther,
 		},
 	}
 
@@ -331,7 +342,7 @@ func TestSessions_ServerMiddleware(t *testing.T) {
 				slog.New(slog.DiscardHandler),
 			)
 
-			s := h.ServerMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			s := h.Authenticator(tt.redirect)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// if the middleware accepts the token, it should set the authenticated user
 				id, ok := AuthenticatedUser(r)
 				require.True(t, ok)
@@ -353,9 +364,9 @@ func TestSessions_ServerMiddleware(t *testing.T) {
 	}
 }
 
-func BenchmarkSessions_ServerMiddleware(b *testing.B) {
+func BenchmarkSessions_Authenticator(b *testing.B) {
 	// Current:
-	// BenchmarkSessions_ServerMiddleware-10  337065	      3584 ns/op	    4684 B/op	      55 allocs/op
+	// BenchmarkSessions_Authenticator-10    	  306352	      3588 ns/op	    4684 B/op	      55 allocs/op
 	const cookieName = "test"
 	h, _ := New(
 		time.Hour,
@@ -364,7 +375,7 @@ func BenchmarkSessions_ServerMiddleware(b *testing.B) {
 		&fakeAuthenticator{},
 		slog.New(slog.DiscardHandler),
 	)
-	handler := h.ServerMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := h.Authenticator(false)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := AuthenticatedUser(r); !ok {
 			b.Fatal("should be authenticated")
 		}

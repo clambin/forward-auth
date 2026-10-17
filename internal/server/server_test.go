@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestServer only tests if all the routes reach the right handler
+// TestServer only tests if each route reaches the right handler and returns the correct status code
 func TestServer(t *testing.T) {
 	// verify that each target reaches the right handler
 	cfg := configuration.DefaultConfiguration
@@ -65,5 +65,5 @@ func TestServer(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/api/sessions/list", nil)
 	resp = httptest.NewRecorder()
 	hExt.ServeHTTP(resp, req)
-	require.Equal(t, http.StatusSeeOther, resp.Code)
+	require.Equal(t, http.StatusUnauthorized, resp.Code)
 }

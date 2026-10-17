@@ -235,13 +235,31 @@ func (m Sessions) LoginHandler(logger *slog.Logger) http.Handler {
 
 type identityKey struct{}
 
-// ServerMiddleware returns a middleware that validates the session cookie and adds the user info to the request context.
-func (m Sessions) ServerMiddleware() func(http.Handler) http.Handler {
+// Authenticator returns a middleware that validates the session cookie. If valid, it adds the identity
+// to the request context and calls the next handler.
+// If the token is invalid, redirectOnError determines whether to redirect to the login page or return an authentication error.
+func (m Sessions) Authenticator(redirectOnError bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if identity, err := m.authenticateRequest(w, r); err == nil {
+			identity, err := m.authenticateRequest(w, r)
+			if err == nil {
 				next.ServeHTTP(w, SetAuthenticatedUser(r, identity))
+				return
 			}
+			m.logger.Warn("failed to authenticate request", slog.Any("err", err))
+			if !redirectOnError {
+				http.Error(w, "failed to authenticate request", http.StatusUnauthorized)
+				return
+			}
+			redirectURL, err := m.authenticator.InitiateLogin(r.Context(), r.URL.String())
+			if err != nil {
+				m.logger.Error("failed to initiate login", slog.Any("err", err))
+				http.Error(w, "failed to initiate login", http.StatusInternalServerError)
+				return
+			}
+			m.logger.Debug("redirecting to login page")
+			http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+
 		})
 	}
 }
@@ -269,8 +287,6 @@ func (m Sessions) authenticateRequest(
 		token, err = ParseToken(cookie.Value, []byte(m.cfg.Key))
 	}
 	if err != nil {
-		m.logger.Error("failed to get token from cookie", slog.Any("err", err))
-		m.redirectToLogin(w, r)
 		return provider.Identity{}, err
 	}
 
@@ -280,14 +296,10 @@ func (m Sessions) authenticateRequest(
 	case errors.Is(err, ErrPreviousRefreshTokenExpired),
 		errors.Is(err, ErrInvalidRefreshToken),
 		errors.Is(err, ErrSessionNotFound):
-		m.logger.Debug("rejecting invalid token", slog.Any("err", err))
 		// we're rejecting the token and asking the user to login again. delete the old session.
 		_ = m.DeleteSession(r.Context(), token.Identity.Email, token.SessionID)
-		m.redirectToLogin(w, r)
 		return provider.Identity{}, err
 	case err != nil:
-		m.logger.Error("failed to validate token", slog.Any("err", err))
-		http.Error(w, "failed to validate token", http.StatusInternalServerError)
 		return provider.Identity{}, err
 	}
 	// if the token was updated, sign the new token
@@ -295,21 +307,11 @@ func (m Sessions) authenticateRequest(
 		m.logger.Debug("token updated")
 		// we know the token can be signed because we created it in handleLogin()
 		signedToken, _ := newToken.Sign([]byte(m.cfg.Key))
+		// TODO: code smell: this is a side effect. move to the middleware?
 		setTokenCookie(w, m.cfg.CookieName, signedToken, m.cfg.Domain)
 	}
 
 	return newToken.Identity, nil
-}
-
-func (m Sessions) redirectToLogin(w http.ResponseWriter, r *http.Request) {
-	redirectURL, err := m.authenticator.InitiateLogin(r.Context(), r.URL.String())
-	if err != nil {
-		m.logger.Error("failed to initiate login", slog.Any("err", err))
-		http.Error(w, "failed to initiate login", http.StatusInternalServerError)
-		return
-	}
-	m.logger.Debug("redirecting to login page")
-	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 
 // setTokenCookie adds a signed token cookie on the response.

@@ -63,7 +63,7 @@ func routeInternal(
 	mux.Handle("/",
 		metrics.InstrumentedHandler("forwardauth")(
 			withForwardAuthMiddleware()( // restore the request first, so the `sessions` middleware redirects for the correct request
-				sessions.ServerMiddleware()(
+				sessions.Authenticator(true)(
 					handleForwardAuth(authorizer, logger.With("handler", "forwardAuth")),
 				),
 			),
@@ -83,24 +83,25 @@ func routeExternal(
 			sessions.LoginHandler(logger.With("handler", "login")),
 		),
 	)
-	authenticatedMux := http.NewServeMux()
-	authenticatedMux.Handle("/api/sessions/",
+	mux.Handle("/api/sessions/",
 		metrics.InstrumentedHandler("api")(
 			http.StripPrefix("/api/sessions",
-				routeSessions(
-					sessions,
-					logger.With(slog.String("handler", "sessions")),
+				sessions.Authenticator(false)( // api calls shouldn't return a redirect
+					routeSessions(
+						sessions,
+						logger.With(slog.String("handler", "sessions")),
+					),
 				),
 			),
 		),
 	)
-	authenticatedMux.Handle("/",
+	mux.Handle("/",
 		metrics.InstrumentedHandler("web")(
-			web.New(),
+			sessions.Authenticator(true)(
+				web.New(),
+			),
 		),
 	)
-
-	mux.Handle("/", sessions.ServerMiddleware()(authenticatedMux))
 	return mux
 }
 
