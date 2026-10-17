@@ -297,7 +297,9 @@ func (m Sessions) authenticateRequest(
 		errors.Is(err, ErrInvalidRefreshToken),
 		errors.Is(err, ErrSessionNotFound):
 		// we're rejecting the token and asking the user to login again. delete the old session.
-		_ = m.DeleteSession(r.Context(), token.Identity.Email, token.SessionID)
+		if err = m.DeleteSession(r.Context(), token.Identity.Email, token.SessionID); err != nil && !errors.Is(err, ErrSessionNotFound) {
+			m.logger.Warn("failed to delete old session", slog.Any("err", err))
+		}
 		return provider.Identity{}, err
 	case err != nil:
 		return provider.Identity{}, err

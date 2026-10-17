@@ -158,7 +158,7 @@ Note: Redis must be 6.2 or higher.
 
 #### Protected application(s)
 
-- Protected by `authenticate` middleware
+- Protected by `forwardAuth` middleware
 - Authenticated user accessible via `X-Forwarded-User-*` headers (email address, name, groups)
 
 ---
