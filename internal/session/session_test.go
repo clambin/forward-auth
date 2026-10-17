@@ -212,7 +212,7 @@ func TestSessions_LoginHandler(t *testing.T) {
 		},
 		{
 			name: "missing state",
-			args: url.Values{"state": []string{"4321"}},
+			args: url.Values{"code": []string{"1234"}},
 			want: want{code: http.StatusBadRequest},
 		},
 	}
