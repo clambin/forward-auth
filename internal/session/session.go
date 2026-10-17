@@ -301,13 +301,14 @@ func (m Sessions) authenticateRequest(
 }
 
 func (m Sessions) redirectToLogin(w http.ResponseWriter, r *http.Request) {
-	m.logger.Debug("redirecting to login page")
 	redirectURL, err := m.authenticator.InitiateLogin(r.Context(), r.URL.String())
 	if err != nil {
 		m.logger.Error("failed to initiate login", slog.Any("err", err))
 		http.Error(w, "failed to initiate login", http.StatusInternalServerError)
 		return
 	}
+	// TODO: remove this
+	m.logger.Debug("redirecting to login page", slog.String("redirect_url", redirectURL))
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 
