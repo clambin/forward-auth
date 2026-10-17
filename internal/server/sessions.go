@@ -1,6 +1,7 @@
 package server
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -8,19 +9,8 @@ import (
 	"time"
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
-	"github.com/clambin/forward-auth/internal/forwardauth"
+	"github.com/clambin/forward-auth/internal/session"
 )
-
-func handleSessions(
-	handler *forwardauth.Handler,
-	logger *slog.Logger,
-) http.Handler {
-	mux := http.NewServeMux()
-	mux.Handle("GET /list", handleListSessions(handler, logger.With("handler", "listSessions")))
-	mux.Handle("DELETE /session/{id}", handleDeleteSession(handler, logger.With("handler", "deleteSession")))
-
-	return ensureUserEmailHeader(mux)
-}
 
 type listSessionsResponseItem struct {
 	SessionID string            `json:"id"`
@@ -30,27 +20,32 @@ type listSessionsResponseItem struct {
 }
 
 func handleListSessions(
-	handler *forwardauth.Handler,
+	handler session.Sessions,
 	logger *slog.Logger,
-
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sessions, err := handler.List(r.Context(), r.Header.Get(forwardedUserEmailHeader))
+		// get the authenticated user
+		identity, ok := session.AuthenticatedUser(r)
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// list sessions for the authenticated user
+		sessions, err := handler.List(r.Context(), identity.Email)
 		if err != nil {
 			logger.Error("failed to list sessions", "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		// write the response
 		response := make([]listSessionsResponseItem, len(sessions))
 		for i := range sessions {
-			lastSeen := sessions[i].RotatedAt
-			if lastSeen.IsZero() {
-				lastSeen = sessions[i].IssuedAt
-			}
 			response[i] = listSessionsResponseItem{
 				SessionID: sessions[i].ID,
 				Identity:  sessions[i].Identity,
-				LastSeen:  lastSeen,
+				LastSeen:  cmp.Or(sessions[i].RotatedAt, sessions[i].IssuedAt),
 				UserAgent: sessions[i].UserAgent,
 			}
 		}
@@ -64,21 +59,22 @@ func handleListSessions(
 }
 
 func handleDeleteSession(
-	handler *forwardauth.Handler,
+	handler session.Sessions,
 	logger *slog.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Note: we rely on the forwarded user email header to identify the user
-		// ListSessions and DeleteSessions are only accessed after forward-auth has run
-		// (this is configured by the HTTPRoute, so we can trust the user email header)
-		username := r.Header.Get(forwardedUserEmailHeader)
+		// get the authenticated user
+		identity, ok := session.AuthenticatedUser(r)
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		// if session id is missing, the http router will not match to this route and sends a 404 directly.
 		id := r.PathValue("id")
 		// Delete checks that the session is associated with the user
-		err := handler.DeleteSession(r.Context(), username, id)
-		logger.Debug("deleting session", "username", username, "id", id, "err", err)
-		if err != nil {
-			if errors.Is(err, forwardauth.ErrSessionNotFound) {
+		username := identity.Email
+		if err := handler.DeleteSession(r.Context(), username, id); err != nil {
+			if errors.Is(err, session.ErrSessionNotFound) {
 				http.Error(w, "session not found", http.StatusNotFound)
 				return
 			}
@@ -86,20 +82,7 @@ func handleDeleteSession(
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		logger.Info("deleted session", slog.String("username", username))
 		w.WriteHeader(http.StatusNoContent)
-	})
-}
-
-// ensureUserEmailHeader is a middleware that ensures the forwarded user email header is present
-// Note: handleSessions relies on the forwarded user email header to identify the user, rather than the JWT.
-// ListSessions and DeleteSessions are only accessed after forward-auth has run
-// (this is configured by the HTTPRoute, so we can trust the user email header).
-func ensureUserEmailHeader(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if username := r.Header.Get(forwardedUserEmailHeader); username == "" {
-			http.Error(w, "missing X-Forwarded-User header", http.StatusForbidden)
-			return
-		}
-		next.ServeHTTP(w, r)
 	})
 }

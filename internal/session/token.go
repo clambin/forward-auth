@@ -1,4 +1,4 @@
-package forwardauth
+package session
 
 import (
 	"crypto/hmac"

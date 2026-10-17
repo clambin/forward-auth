@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/endpoints"
 )
@@ -63,7 +63,6 @@ func (o *gitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (
 	}
 
 	// we didn't get an email address, so we need to get it from the ListEmails API
-	//slog.Info("no email address found in user object. getting it from the User Emails API")
 	emailAddresses, err := c.GetUserEmails(ctx)
 	if err != nil {
 		return Identity{}, fmt.Errorf("github email list: %w", err)
@@ -74,14 +73,15 @@ func (o *gitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (
 
 func selectEmailAddress(emailAddresses []*github.UserEmail) (string, error) {
 	// only consider verified email addresses
-	notVerified := func(e *github.UserEmail) bool { return !e.GetVerified() }
-	emailAddresses = slices.DeleteFunc(emailAddresses, notVerified)
-	if len(emailAddresses) == 0 {
+	verifiedEmailAddresses := slices.DeleteFunc(emailAddresses, func(e *github.UserEmail) bool {
+		return !e.GetVerified()
+	})
+	if len(verifiedEmailAddresses) == 0 {
 		return "", errors.New("no verified email addresses found")
 	}
 
 	// sort the email addresses: move the primary to the top. the others (secondary) are sorted alphabetically.
-	slices.SortFunc(emailAddresses, func(a, b *github.UserEmail) int {
+	slices.SortFunc(verifiedEmailAddresses, func(a, b *github.UserEmail) int {
 		switch {
 		case a.GetPrimary():
 			return -1
@@ -91,7 +91,7 @@ func selectEmailAddress(emailAddresses []*github.UserEmail) (string, error) {
 			return cmp.Compare(a.GetEmail(), b.GetEmail())
 		}
 	})
-	return emailAddresses[0].GetEmail(), nil
+	return verifiedEmailAddresses[0].GetEmail(), nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

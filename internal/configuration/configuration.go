@@ -15,14 +15,17 @@ import (
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var DefaultConfiguration = Configuration{
 	Server: ServerConfiguration{
-		Addr:       ":8080",
 		CookieName: "forward-auth-session",
 		Key:        "change-me!",
+		HealthPath: "/healthz",
+		AddrInt:    ":8080",
+		AddrExt:    ":8081",
 	},
 	Logger: LoggerConfiguration{
 		Level:  "info",
@@ -31,10 +34,6 @@ var DefaultConfiguration = Configuration{
 	Prometheus: PrometheusConfiguration{
 		Addr: ":9120",
 		Path: "/metrics",
-	},
-	Health: HealthConfiguration{
-		Addr: ":8888",
-		Path: "/healthz",
 	},
 	Authn: AuthnConfiguration{
 		StateTTL: 10 * time.Minute,
@@ -58,7 +57,6 @@ type Configuration struct {
 	Server     ServerConfiguration     `yaml:"server"`
 	Logger     LoggerConfiguration     `yaml:"logger"`
 	Prometheus PrometheusConfiguration `yaml:"prometheus"`
-	Health     HealthConfiguration     `yaml:"health"`
 	Storage    StorageConfiguration    `yaml:"storage"`
 	Authz      AuthzConfiguration      `yaml:"authz"`
 	Authn      AuthnConfiguration      `yaml:"authn"`
@@ -66,10 +64,12 @@ type Configuration struct {
 }
 
 type ServerConfiguration struct {
-	Addr       string `yaml:"addr"`
 	CookieName string `yaml:"cookieName"`
 	Key        string `yaml:"key"`
 	Domain     string `yaml:"domain"`
+	HealthPath string `yaml:"healthPath"`
+	AddrInt    string `yaml:"addrInt"`
+	AddrExt    string `yaml:"addrExt"`
 }
 
 type LoggerConfiguration struct {
@@ -114,16 +114,15 @@ type PrometheusConfiguration struct {
 // The server is shut down when the context is canceled.
 func (c PrometheusConfiguration) RunServer(ctx context.Context) error {
 	mux := http.NewServeMux()
-	mux.Handle(cmp.Or(c.Path, "/metrics"), promhttp.Handler())
+	mux.Handle(cmp.Or(c.Path, "/metrics"), promhttp.HandlerFor(
+		prometheus.DefaultGatherer,
+		// test: reduce memory usage (especially flate.NewWriter() and flate (*compressor) init())
+		promhttp.HandlerOpts{DisableCompression: true},
+	))
 	return httputils.RunServer(ctx, &http.Server{
 		Addr:    c.Addr,
 		Handler: mux,
 	})
-}
-
-type HealthConfiguration struct {
-	Addr string `yaml:"addr"`
-	Path string `yaml:"path"`
 }
 
 type AuthnConfiguration struct {

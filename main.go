@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"net/http"
+	// _ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
@@ -14,10 +15,10 @@ import (
 	"github.com/clambin/forward-auth/internal/authn"
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/clambin/forward-auth/internal/configuration"
-	"github.com/clambin/forward-auth/internal/forwardauth"
 	"github.com/clambin/forward-auth/internal/observability"
 	"github.com/clambin/forward-auth/internal/server"
 	"github.com/clambin/forward-auth/internal/server/healthcheck"
+	"github.com/clambin/forward-auth/internal/session"
 	"github.com/goccy/go-yaml"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
@@ -53,7 +54,7 @@ func main() {
 
 	authorizer := &authz.Authorizer{Rules: cfg.Authz.Rules, Groups: cfg.Authz.Groups}
 
-	handler, err := forwardauth.New(cfg.Session.SessionTTL, authorizer, cfg.Storage)
+	handler, err := session.New(cfg.Session.SessionTTL, cfg.Server, cfg.Storage, authenticator, logger.With("component", "sessions"))
 	if err != nil {
 		logger.Error("failed to create token manager cache", "err", err)
 		os.Exit(1)
@@ -67,6 +68,7 @@ func main() {
 			Password: cfg.Storage.Redis.Password,
 			DB:       cfg.Storage.Redis.DB,
 		})
+		defer func() { _ = redisClient.Close() }()
 	}
 
 	logger.Info("starting forward-auth", "version", version)
@@ -94,27 +96,43 @@ func main() {
 		},
 	)
 
+	hInt, hExt := server.New(
+		cfg.Server,
+		handler,
+		authorizer,
+		metrics,
+		healthcheck.Handler(redisClient, logger.With("component", "healthcheck")),
+		logger,
+	)
+
 	var g errgroup.Group
 	// Prometheus
 	g.Go(func() error {
 		return cfg.Prometheus.RunServer(ctx)
 	})
-	// Health Check
-	g.Go(func() error {
-		mux := http.NewServeMux()
-		mux.Handle(cfg.Health.Path, healthcheck.Handler(redisClient, logger.With("component", "healthcheck")))
-		return httputils.RunServer(ctx, &http.Server{
-			Addr:    cfg.Health.Addr,
-			Handler: mux,
-		})
-	})
-	// forward-auth
+	// Internal handlers
 	g.Go(func() error {
 		return httputils.RunServer(ctx, &http.Server{
-			Addr:    cfg.Server.Addr,
-			Handler: server.New(cfg.Server, handler, authenticator, metrics, logger),
+			Addr:    cfg.Server.AddrInt,
+			Handler: hInt,
 		})
 	})
+	// External handlers
+	g.Go(func() error {
+		return httputils.RunServer(ctx, &http.Server{
+			Addr:    cfg.Server.AddrExt,
+			Handler: hExt,
+		})
+	})
+	/*
+		// pprof
+		g.Go(func() error {
+			return httputils.RunServer(ctx, &http.Server{
+				Addr:    ":6060",
+				Handler: http.DefaultServeMux,
+			})
+		})
+	*/
 	if err = g.Wait(); err != nil {
 		logger.Error("failed to start server(s)", "err", err)
 	}

@@ -6,19 +6,14 @@ import (
 	"time"
 
 	"github.com/clambin/forward-auth/internal/configuration"
+	"github.com/clambin/forward-auth/internal/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 )
 
 func TestCache(t *testing.T) {
 	ctx := t.Context()
-	c, err := tcredis.Run(ctx, "redis:8.10.2")
-	require.NoError(t, err)
-	endpoint, err := c.Endpoint(ctx, "")
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, c.Terminate(context.Background())) })
-
+	endpoint := testutils.RedisTestContainer(t)
 	tests := []struct {
 		name string
 		cfg  configuration.StorageConfiguration
@@ -62,12 +57,7 @@ func TestCache(t *testing.T) {
 }
 
 func TestRedisCache_Len(t *testing.T) {
-	ctx := t.Context()
-	c, err := tcredis.Run(ctx, "redis:8.10.2")
-	require.NoError(t, err)
-	endpoint, err := c.Endpoint(ctx, "")
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, c.Terminate(context.Background())) })
+	endpoint := testutils.RedisTestContainer(t)
 
 	cfg := configuration.StorageConfiguration{
 		Type:  "redis",
