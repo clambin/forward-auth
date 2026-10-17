@@ -83,23 +83,24 @@ func routeExternal(
 			sessions.LoginHandler(), // TODO: logger for "login" handler
 		),
 	)
-	mux.Handle("/api/sessions/",
+	authenticatedMux := http.NewServeMux()
+	authenticatedMux.Handle("/api/sessions/",
 		metrics.InstrumentedHandler("api")(
 			http.StripPrefix("/api/sessions",
-				sessions.ServerMiddleware()(
-					routeSessions(
-						sessions,
-						logger.With(slog.String("handler", "sessions")),
-					),
+				routeSessions(
+					sessions,
+					logger.With(slog.String("handler", "sessions")),
 				),
 			),
 		),
 	)
-	mux.Handle("/",
+	authenticatedMux.Handle("/",
 		metrics.InstrumentedHandler("web")(
 			web.New(),
 		),
 	)
+
+	mux.Handle("/", sessions.ServerMiddleware()(authenticatedMux))
 	return mux
 }
 

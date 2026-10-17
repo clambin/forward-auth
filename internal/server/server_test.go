@@ -55,6 +55,12 @@ func TestServer(t *testing.T) {
 	hExt.ServeHTTP(resp, req)
 	require.Equal(t, http.StatusBadRequest, resp.Code)
 
+	// html
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	resp = httptest.NewRecorder()
+	hExt.ServeHTTP(resp, req)
+	require.Equal(t, http.StatusSeeOther, resp.Code)
+
 	// API
 	req = httptest.NewRequest(http.MethodGet, "/api/sessions/list", nil)
 	resp = httptest.NewRecorder()
