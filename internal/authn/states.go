@@ -30,12 +30,15 @@ func newStates(ttl time.Duration, cfg configuration.StorageConfiguration) (state
 			cache: cache.New[string, string](ttl, time.Minute),
 		}
 	case "redis":
-		store = &redisStore{client: redis.NewClient(&redis.Options{
-			Addr:     cfg.Redis.Addr,
-			Username: cfg.Redis.Username,
-			Password: cfg.Redis.Password,
-			DB:       cfg.Redis.DB,
-		})}
+		store = &redisStore{
+			ttl: ttl,
+			client: redis.NewClient(&redis.Options{
+				Addr:     cfg.Redis.Addr,
+				Username: cfg.Redis.Username,
+				Password: cfg.Redis.Password,
+				DB:       cfg.Redis.DB,
+			}),
+		}
 	default:
 		return states{}, fmt.Errorf("invalid storage type: %s", cfg.Type)
 	}
