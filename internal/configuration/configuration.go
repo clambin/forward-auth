@@ -14,6 +14,7 @@ import (
 	"codeberg.org/clambin/go-common/httputils"
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/authz"
+	"github.com/clambin/forward-auth/internal/configuration/validate"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -63,6 +64,18 @@ type Configuration struct {
 	Session    SessionConfiguration    `yaml:"session"`
 }
 
+func (c Configuration) IsValid() error {
+	return errors.Join(
+		validate.PrefixError("server", c.Server.IsValid()),
+		validate.PrefixError("logger", c.Logger.IsValid()),
+		validate.PrefixError("prometheus", c.Prometheus.IsValid()),
+		validate.PrefixError("storage", c.Storage.IsValid()),
+		validate.PrefixError("authz", c.Authz.IsValid()),
+		validate.PrefixError("authn", c.Authn.IsValid()),
+		validate.PrefixError("session", c.Session.IsValid()),
+	)
+}
+
 type ServerConfiguration struct {
 	CookieName string `yaml:"cookieName"`
 	Key        string `yaml:"key"`
@@ -72,9 +85,27 @@ type ServerConfiguration struct {
 	AddrExt    string `yaml:"addrExt"`
 }
 
+func (c ServerConfiguration) IsValid() error {
+	return errors.Join(
+		validate.PrefixError("cookieName", validate.IsNotZero(c.CookieName)),
+		validate.PrefixError("key", validate.IsMinLength(c.Key, 32)),
+		validate.PrefixError("domain", validate.IsNotZero(c.Domain)),
+		validate.PrefixError("healthPath", validate.IsAbsolutePath(c.HealthPath)),
+		validate.PrefixError("addrInt", validate.IsTCPTarget(c.AddrInt)),
+		validate.PrefixError("addrExt", validate.IsTCPTarget(c.AddrExt)),
+	)
+}
+
 type LoggerConfiguration struct {
 	Level  string `yaml:"level"`
 	Format string `yaml:"format"`
+}
+
+func (c LoggerConfiguration) IsValid() error {
+	return errors.Join(
+		validate.PrefixError("level", validate.IsEnum(c.Level, "debug", "info", "warn", "error")),
+		validate.PrefixError("format", validate.IsEnum(c.Format, "text", "json")),
+	)
 }
 
 // Logger returns a logger configured with the given configuration.
@@ -110,6 +141,13 @@ type PrometheusConfiguration struct {
 	Path string `yaml:"path"`
 }
 
+func (c PrometheusConfiguration) IsValid() error {
+	return errors.Join(
+		validate.PrefixError("addr", validate.IsTCPTarget(c.Addr)),
+		validate.PrefixError("path", validate.IsAbsolutePath(c.Path)),
+	)
+}
+
 // RunServer runs a prometheus server on the given address.
 // The server is shut down when the context is canceled.
 func (c PrometheusConfiguration) RunServer(ctx context.Context) error {
@@ -131,14 +169,33 @@ type AuthnConfiguration struct {
 	SelectAccount bool                   `yaml:"select_account"`
 }
 
+func (c AuthnConfiguration) IsValid() error {
+	return errors.Join(
+		validate.PrefixError("provider", c.Provider.IsValid()),
+		validate.PrefixError("state_ttl", validate.IsNotZero(c.StateTTL)),
+	)
+}
+
 type AuthzConfiguration struct {
 	Rules  []authz.Rule  `yaml:"rules,omitempty"`
 	Groups []authz.Group `yaml:"groups,omitempty"`
 }
 
+func (c AuthzConfiguration) IsValid() error {
+	return nil
+}
+
 type StorageConfiguration struct {
 	Type  string                    `yaml:"type"`
 	Redis StorageRedisConfiguration `yaml:"redis"`
+}
+
+func (c StorageConfiguration) IsValid() error {
+	errs := validate.PrefixError("type", validate.IsEnum(c.Type, "redis", "local", ""))
+	if c.Type == "redis" {
+		errs = errors.Join(errs, c.Redis.IsValid())
+	}
+	return errs
 }
 
 type StorageRedisConfiguration struct {
@@ -148,6 +205,14 @@ type StorageRedisConfiguration struct {
 	DB       int    `yaml:"db"`
 }
 
+func (c StorageRedisConfiguration) IsValid() error {
+	return validate.PrefixError("addr", errors.Join(validate.IsTCPTarget(c.Addr)))
+}
+
 type SessionConfiguration struct {
 	SessionTTL time.Duration `yaml:"session_ttl"`
+}
+
+func (c SessionConfiguration) IsValid() error {
+	return validate.PrefixError("session_ttl", validate.IsNotZero(c.SessionTTL))
 }

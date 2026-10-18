@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -33,14 +34,13 @@ func main() {
 	flag.Parse()
 	cfg, err := getConfiguration()
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("failed to read configuration: %w", err))
 	}
-	logger := cfg.Logger.Logger(os.Stderr)
+	if err = cfg.IsValid(); err != nil {
+		panic(fmt.Errorf("invalid configuration: %w", err))
+	}
 
-	if len(cfg.Server.Key) < 32 {
-		logger.Error("token key must be at least 32 characters long")
-		os.Exit(1)
-	}
+	logger := cfg.Logger.Logger(os.Stderr)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

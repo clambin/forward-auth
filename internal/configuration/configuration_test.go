@@ -74,5 +74,41 @@ func TestConfiguration_Unmarshal(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, string(golden), string(body))
+}
 
+func TestConfiguration_IsValid(t *testing.T) {
+	// blank configuration is invalid
+	require.Error(t, Configuration{}.IsValid())
+
+	// default configuration is invalid
+	cfg := DefaultConfiguration
+	require.Error(t, cfg.IsValid())
+
+	// fill in all mandatory fields
+	cfg.Server.Key = strings.Repeat("a", 32)
+	cfg.Server.Domain = "example.com"
+	cfg.Authn.Provider.RedirectURL = "https://example.com"
+	cfg.Authn.Provider.OIDC.IssuerURL = "https://example.com"
+	cfg.Authn.Provider.OIDC.ClientID = "my-client-id"
+	cfg.Authn.Provider.OIDC.ClientSecret = "my-client-secret"
+	require.NoError(t, cfg.IsValid())
+
+	// change provider type to github and validate mandatory fields
+	cfg.Authn.Provider.Type = "github"
+	require.Error(t, cfg.IsValid())
+	cfg.Authn.Provider.GitHub.ClientID = "my-client-id"
+	cfg.Authn.Provider.GitHub.ClientSecret = "my-client-secret"
+	require.NoError(t, cfg.IsValid())
+
+	// change storage type to redis and validate mandatory fields
+	cfg.Storage.Type = "redis"
+	require.Error(t, cfg.IsValid())
+	cfg.Storage.Redis.Addr = "127.0.0.1:6379"
+	require.NoError(t, cfg.IsValid())
+
+	// key that is too short is rejected
+	cfg.Server.Key = "too-short"
+	err := cfg.IsValid()
+	require.Error(t, err)
+	assert.Equal(t, "server: key: must be at least 32 characters long", err.Error())
 }
