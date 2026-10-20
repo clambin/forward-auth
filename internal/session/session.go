@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 	"uuid"
 
@@ -62,7 +63,7 @@ func New(
 	authenticator Authenticator,
 	logger *slog.Logger) (Sessions, error) {
 	var store store
-	switch storageConfiguration.Type {
+	switch strings.ToLower(storageConfiguration.Type) {
 	case "local", "":
 		store = &InMemoryStore{Cache: cache.New[string, Session](ttl, time.Minute)}
 	case "redis":

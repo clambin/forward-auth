@@ -143,7 +143,12 @@ func getConfiguration(ctx context.Context) (configuration.Configuration, error) 
 	}
 
 	// override from environment variables
-	if err = envconfig.Process(ctx, &cfg); err != nil {
+	err = envconfig.ProcessWith(ctx, &envconfig.Config{
+		Target:           &cfg,
+		Lookuper:         envconfig.OsLookuper(),
+		DefaultOverwrite: true,
+	})
+	if err != nil {
 		return cfg, fmt.Errorf("failed to process environment variables: %w", err)
 	}
 	return cfg, nil

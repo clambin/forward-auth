@@ -241,8 +241,8 @@ func (c OIDCProviderConfiguration) IsValid() error {
 }
 
 type GitHubProviderConfiguration struct {
-	ClientID     string   `yaml:"client_id" env:"CLIENT_ID" env:"CLIENT_ID"`
-	ClientSecret string   `yaml:"client_secret" env:"CLIENT_SECRET" env:"CLIENT_SECRET"`
+	ClientID     string   `yaml:"client_id" env:"CLIENT_ID"`
+	ClientSecret string   `yaml:"client_secret" env:"CLIENT_SECRET"`
 	Scopes       []string `yaml:"scopes"`
 }
 

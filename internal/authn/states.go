@@ -24,7 +24,7 @@ type states struct {
 
 func newStates(ttl time.Duration, cfg configuration.StorageConfiguration) (states, error) {
 	var store store
-	switch cfg.Type {
+	switch strings.ToLower(cfg.Type) {
 	case "local", "":
 		store = &inMemoryStore{
 			cache: cache.New[string, string](ttl, time.Minute),

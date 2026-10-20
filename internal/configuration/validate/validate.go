@@ -24,6 +24,9 @@ func IsURL(value string) error {
 		IsNotZero(value),
 		func() error {
 			u, err := url.Parse(value)
+			if err != nil {
+				return fmt.Errorf("%q is not a valid URL: %w", value, err)
+			}
 			if u.Host == "" {
 				err = fmt.Errorf("missing scheme?")
 			}
