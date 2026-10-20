@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/clambin/forward-auth/internal/configuration"
 	"golang.org/x/oauth2"
 )
 
@@ -21,17 +22,17 @@ type Provider interface {
 }
 
 // New creates a new authentication provider for the provided configuration.
-func New(ctx context.Context, configuration Configuration) (Provider, error) {
-	switch configuration.Type {
+func New(ctx context.Context, config configuration.ProviderConfiguration) (Provider, error) {
+	switch config.Type {
 	case "oidc":
-		a, err := newOIDCProvider(ctx, configuration.RedirectURL, configuration.OIDC)
+		a, err := newOIDCProvider(ctx, config.RedirectURL, config.OIDC)
 		if err != nil {
 			return nil, fmt.Errorf("oidc authenticator: %w", err)
 		}
 		return a, nil
 	case "github":
-		return newGitHubProvider(configuration.RedirectURL, configuration.GitHub), nil
+		return newGitHubProvider(config.RedirectURL, config.GitHub), nil
 	default:
-		return nil, fmt.Errorf("unsupported provider type: %s", configuration.Type)
+		return nil, fmt.Errorf("unsupported provider type: %s", config.Type)
 	}
 }

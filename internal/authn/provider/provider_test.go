@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/oauth2-proxy/mockoidc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,9 +15,9 @@ func TestProvider(t *testing.T) {
 	oidcServer, err := mockoidc.Run()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = oidcServer.Shutdown() })
-	oidcCfg := Configuration{
+	oidcCfg := configuration.ProviderConfiguration{
 		Type: "oidc",
-		OIDC: OIDCConfiguration{
+		OIDC: configuration.OIDCProviderConfiguration{
 			ClientID:     oidcServer.Config().ClientID,
 			ClientSecret: oidcServer.Config().ClientSecret,
 			IssuerURL:    oidcServer.Issuer(),
@@ -37,13 +38,13 @@ func TestProvider(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		cfg     Configuration
+		cfg     configuration.ProviderConfiguration
 		code    func(email string) string
 		wantErr require.ErrorAssertionFunc
 	}{
 		{"oidc", oidcCfg, oidcCode, require.NoError},
 		{"oidc bad config", invalidOidcCfg, oidcCode, require.Error},
-		{"invalid type", Configuration{Type: "invalid"}, nil, require.Error},
+		{"invalid type", configuration.ProviderConfiguration{Type: "invalid"}, nil, require.Error},
 	}
 
 	for _, tt := range tests {

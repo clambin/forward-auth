@@ -32,7 +32,7 @@ func handleForwardAuth(
 
 		// is the user authorized to access the resource?
 		if !authorizer.Allow(r.URL, identity.Email) {
-			logger.Error("user not authorized to access resource", slog.String("user", identity.Email), slog.String("url", r.URL.String()))
+			logger.Warn("user not authorized to access resource", slog.String("user", identity.Email), slog.String("url", r.URL.String()))
 			http.Error(w, "user not authorized to access resource", http.StatusForbidden)
 			return
 		}

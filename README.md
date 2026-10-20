@@ -198,8 +198,8 @@ server:
   domain: .example.com
   # Key to sign and verify the JWT.
   # Must be at least 32 characters long.
-  # Use environment variables to keep these credentials out of the configuration file.
-  key: "${JWT_KEY}"
+  # Overridden by the environment value "SERVER_KEY".
+  key: ""
 logger:
   # Logging level. Default: "info".
   level: info
@@ -237,11 +237,11 @@ authn:
     # OIDC-related configuration.
     oidc:
       # OIDC client ID.
-      # Use environment variables to keep these credentials out of the configuration file.
-      client_id: "${OIDC_CLIENT_ID}"
+      # Overridden by the environment value "AUTHN_PROVIDER_OIDC_CLIENT_ID".
+      client_id: ""
       # OIDC client secret.
-      # Use environment variables to keep these credentials out of the configuration file.
-      client_secret: "${OIDC_CLIENT_SECRET}"
+      # Overridden by the environment value "AUTHN_PROVIDER_OIDC_CLIENT_SECRET".
+      client_secret: ""
       # OIDC issuer URL.
       issuer_url: https://accounts.google.com
       # scopes to request from the OIDC provider. 
@@ -250,11 +250,11 @@ authn:
     # GitHub-related configuration. Only required for type github.
     github:
       # Oauth2 client ID.
-      # Use environment variables to keep these credentials out of the configuration file.
-      client_id: "${GITHUB_CLIENT_ID}"
+      # Overridden by the environment value "AUTHN_PROVIDER_GITHUB_CLIENT_ID".
+      client_id: ""
       # Oauth2 client secret.
-      # Use environment variables to keep these credentials out of the configuration file.
-      client_secret: "${GITHUB_CLIENT_SECRET}"
+      # Overridden by the environment value "AUTHN_PROVIDER_GITHUB_CLIENT_SECRET".
+      client_secret: ""
       # scopes to request from github. 
       # only override this if you know what you're doing.
       scopes: [ user:email, read:user ]
@@ -281,25 +281,16 @@ storage:
   # Use environment variables to keep these credentials out of the configuration file.
   redis:
     addr: redis:6379
-    username: "${REDIS_USERNAME}"
-    password: "${REDIS_PASSWORD}"
+    # Overridden by the environment value "STORAGE_REDIS_USERNAME".
+    username: ""
+    # Overridden by the environment value "STORAGE_REDIS_PASSWORD".
+    password: ""
     db: 0
 
 session:
   # Session lifetime. Default: 24h. 
   # The session is invalidated after this time, and the user needs to log in again.
   session_ttl: 24h
-```
-
-Sensitive data, such as OID client secrets and redis passwords, can be passed in as environment variables:
-
-```
-storage:
-  type: redis
-  redis:
-    addr: redis:6379
-    password: ${REDIS_PASSWORD}
-    db: 0
 ```
 
 ---

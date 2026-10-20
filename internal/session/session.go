@@ -259,7 +259,6 @@ func (m Sessions) Authenticator(redirectOnError bool) func(http.Handler) http.Ha
 			}
 			m.logger.Debug("redirecting to login page")
 			http.Redirect(w, r, redirectURL, http.StatusSeeOther)
-
 		})
 	}
 }
@@ -318,12 +317,13 @@ func (m Sessions) authenticateRequest(
 
 // setTokenCookie adds a signed token cookie on the response.
 func setTokenCookie(w http.ResponseWriter, cookieName, signedToken, domain string) {
+	// Expires is empty, so the browser sends an expired cookie
+	// which we may then attempt to refresh using the refresh token
 	http.SetCookie(w, &http.Cookie{
-		Name:   cookieName,
-		Value:  signedToken,
-		Domain: domain,
-		Path:   "/",
-		//Expires:  time.Now().Add(tokenManager.TTL()), // leaving this out so the browser sends an expired cookie
+		Name:     cookieName,
+		Value:    signedToken,
+		Domain:   domain,
+		Path:     "/",
 		Secure:   true,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,

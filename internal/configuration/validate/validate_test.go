@@ -82,6 +82,8 @@ func TestIsNotZero(t *testing.T) {
 		{"zero duration", func() error { return IsNotZero(time.Duration(0)) }, require.Error},
 		{"int", func() error { return IsNotZero(1) }, require.NoError},
 		{"zero int", func() error { return IsNotZero(0) }, require.Error},
+		{"float", func() error { return IsNotZero(1.0) }, require.NoError},
+		{"float int", func() error { return IsNotZero(0.0) }, require.Error},
 	}
 
 	for _, tt := range tests {

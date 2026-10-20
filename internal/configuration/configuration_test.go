@@ -3,6 +3,7 @@ package configuration
 import (
 	"bytes"
 	"flag"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/goccy/go-yaml"
+	"github.com/sethvargo/go-envconfig/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,10 +24,9 @@ func TestLoggerConfiguration_Logger(t *testing.T) {
 		cfg  LoggerConfiguration
 		want string
 	}{
-		{"text", LoggerConfiguration{Level: "INFO", Format: "text"}, `level=INFO msg=test`},
-		{"json", LoggerConfiguration{Level: "INFO", Format: "json"}, `"level":"INFO","msg":"test"`},
-		{"invalid level", LoggerConfiguration{Level: "invalid", Format: "text"}, "invalid log level: invalid. using INFO"},
-		{"invalid format", LoggerConfiguration{Level: "INFO", Format: "invalid"}, "invalid log format: invalid. using text"},
+		{"text", LoggerConfiguration{Level: slog.LevelInfo, Format: "text"}, `level=INFO msg=test`},
+		{"json", LoggerConfiguration{Level: slog.LevelInfo, Format: "json"}, `"level":"INFO","msg":"test"`},
+		{"invalid format", LoggerConfiguration{Level: slog.LevelInfo, Format: "invalid"}, "invalid log format: invalid. using text"},
 	}
 
 	for _, tt := range tests {
@@ -39,7 +40,7 @@ func TestLoggerConfiguration_Logger(t *testing.T) {
 }
 
 func TestConfiguration_Unmarshal(t *testing.T) {
-	cfg := DefaultConfiguration
+	cfg := Default()
 	cfg.Server.Key = "my-token-signing-key"
 	cfg.Authz = AuthzConfiguration{
 		Rules: []authz.Rule{
@@ -74,6 +75,10 @@ func TestConfiguration_Unmarshal(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, string(golden), string(body))
+
+	var cfg2 Configuration
+	require.NoError(t, yaml.Unmarshal(golden, &cfg2))
+	assert.Equal(t, cfg, cfg2)
 }
 
 func TestConfiguration_IsValid(t *testing.T) {
@@ -81,7 +86,7 @@ func TestConfiguration_IsValid(t *testing.T) {
 	require.Error(t, Configuration{}.IsValid())
 
 	// default configuration is invalid
-	cfg := DefaultConfiguration
+	cfg := Default()
 	require.Error(t, cfg.IsValid())
 
 	// fill in all mandatory fields
@@ -111,4 +116,87 @@ func TestConfiguration_IsValid(t *testing.T) {
 	err := cfg.IsValid()
 	require.Error(t, err)
 	assert.Equal(t, "server: key: must be at least 32 characters long", err.Error())
+}
+
+func TestProviderConfiguration_IsValid(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     ProviderConfiguration
+		wantErr require.ErrorAssertionFunc
+	}{
+		{"blank", ProviderConfiguration{}, require.Error},
+		{"invalid type", ProviderConfiguration{Type: "invalid"}, require.Error},
+		{"valid oidc", ProviderConfiguration{Type: "oidc", RedirectURL: "https://example.com", OIDC: OIDCProviderConfiguration{"https://example.xom", "ClientID", "ClientSecret", []string{}}}, require.NoError},
+		{"valid github", ProviderConfiguration{Type: "github", RedirectURL: "https://example.com", GitHub: GitHubProviderConfiguration{"ClientID", "ClientSecret", []string{}}}, require.NoError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.IsValid()
+			tt.wantErr(t, err)
+		})
+	}
+}
+
+func TestOIDCConfiguration_IsValid(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     OIDCProviderConfiguration
+		wantErr require.ErrorAssertionFunc
+	}{
+		{"blank", OIDCProviderConfiguration{}, require.Error},
+		{"no issuer", OIDCProviderConfiguration{"", "ClientID", "ClientSecret", []string{}}, require.Error},
+		{"no client id", OIDCProviderConfiguration{"https://example.xom", "", "ClientSecret", []string{}}, require.Error},
+		{"no client secret", OIDCProviderConfiguration{"https://example.xom", "ClientID", "", []string{}}, require.Error},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.IsValid()
+			tt.wantErr(t, err)
+		})
+	}
+}
+
+func TestGitHubConfiguration_IsValid(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     GitHubProviderConfiguration
+		wantErr require.ErrorAssertionFunc
+	}{
+		{"blank", GitHubProviderConfiguration{}, require.Error},
+		{"no client id", GitHubProviderConfiguration{"", "ClientSecret", []string{}}, require.Error},
+		{"no client secret", GitHubProviderConfiguration{"ClientID", "", []string{}}, require.Error},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.IsValid()
+			tt.wantErr(t, err)
+		})
+	}
+}
+
+// TestEnvVars tests that configuration supports the expected environment variables
+func TestEnvVars(t *testing.T) {
+	want := []string{
+		"AUTHN_PROVIDER_GITHUB_CLIENT_ID",
+		"AUTHN_PROVIDER_GITHUB_CLIENT_SECRET",
+		"AUTHN_PROVIDER_OIDC_CLIENT_ID",
+		"AUTHN_PROVIDER_OIDC_CLIENT_SECRET",
+		"SERVER_KEY",
+		"STORAGE_REDIS_PASSWORD",
+		"STORAGE_REDIS_USERNAME",
+	}
+	assert.Equal(t, want, envVars(Configuration{}))
+}
+
+func TestConfiguration_EnvVars(t *testing.T) {
+	cfg := Default()
+	err := envconfig.ProcessWith(t.Context(), &envconfig.Config{
+		Target:   &cfg,
+		Lookuper: envconfig.MapLookuper(map[string]string{"STORAGE_REDIS_PASSWORD": "password"}),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "password", cfg.Storage.Redis.Password)
 }
