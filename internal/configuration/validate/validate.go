@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"slices"
 	"strings"
 )
 
@@ -77,9 +76,12 @@ func IsTCPTarget(value string) error {
 }
 
 // IsEnum returns an error if value is not one of the valid values.
+// Match is case-insensitive.
 func IsEnum(value string, validValues ...string) error {
-	if !slices.Contains(validValues, strings.ToLower(value)) {
-		return fmt.Errorf("%q is not a valid value", value)
+	for _, validValue := range validValues {
+		if strings.EqualFold(validValue, value) {
+			return nil
+		}
 	}
-	return nil
+	return fmt.Errorf("%q is not a valid value", value)
 }
