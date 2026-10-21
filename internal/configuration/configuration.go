@@ -216,7 +216,7 @@ func (c ProviderConfiguration) IsValid() error {
 		validate.PrefixError("type", validate.IsEnum(c.Type, "oidc", "github")),
 		validate.PrefixError("redirect_url", validate.IsNotZero(c.RedirectURL)),
 	)
-	switch c.Type {
+	switch strings.ToLower(c.Type) {
 	case "oidc":
 		errs = errors.Join(errs, validate.PrefixError("oidc", c.OIDC.IsValid()))
 	case "github":
