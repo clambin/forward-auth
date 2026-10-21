@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,7 +32,7 @@ func TestGitHubProvider(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			a, _ := New(t.Context(), Configuration{Type: "github"})
+			a, _ := New(t.Context(), configuration.ProviderConfiguration{Type: "github"})
 			a.(*gitHubProvider).client = &fakeGitHubClient{user: tt.user, emails: tt.emails}
 
 			got, err := a.GetUserInfo(t.Context(), nil)

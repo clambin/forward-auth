@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/oauth2-proxy/mockoidc"
 	"github.com/stretchr/testify/assert"
@@ -20,10 +19,10 @@ func TestAuthenticator(t *testing.T) {
 	config := configuration.Configuration{
 		Authn: configuration.AuthnConfiguration{
 			StateTTL: 5 * time.Minute,
-			Provider: provider.Configuration{
+			Provider: configuration.ProviderConfiguration{
 				Type:        "oidc",
 				RedirectURL: "https://auth.example.com",
-				OIDC: provider.OIDCConfiguration{
+				OIDC: configuration.OIDCProviderConfiguration{
 					ClientID:     oidcServer.Config().ClientID,
 					ClientSecret: oidcServer.Config().ClientSecret,
 					IssuerURL:    oidcServer.Issuer(),

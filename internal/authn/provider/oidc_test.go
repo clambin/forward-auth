@@ -3,6 +3,7 @@ package provider
 import (
 	"testing"
 
+	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/oauth2-proxy/mockoidc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,7 +14,7 @@ func TestOidcProvider_GetUserInfo(t *testing.T) {
 	oidcServer, err := mockoidc.Run()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = oidcServer.Shutdown() })
-	cfg := OIDCConfiguration{
+	cfg := configuration.OIDCProviderConfiguration{
 		ClientID:     oidcServer.Config().ClientID,
 		ClientSecret: oidcServer.Config().ClientSecret,
 		IssuerURL:    oidcServer.Issuer(),

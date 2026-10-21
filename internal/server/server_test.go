@@ -18,7 +18,7 @@ import (
 // TestServer only tests if each route reaches the right handler and returns the correct status code
 func TestServer(t *testing.T) {
 	// verify that each target reaches the right handler
-	cfg := configuration.DefaultConfiguration
+	cfg := configuration.Default()
 	cfg.Authn.Provider.Type = "github"
 	an, err := authn.New(t.Context(), cfg)
 	require.NoError(t, err)

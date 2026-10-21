@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/google/go-github/v93/github"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/endpoints"
@@ -20,7 +21,7 @@ type gitHubProvider struct {
 	client gitHubClient
 }
 
-func newGitHubProvider(redirectURL string, cfg GitHubConfiguration) *gitHubProvider {
+func newGitHubProvider(redirectURL string, cfg configuration.GitHubProviderConfiguration) *gitHubProvider {
 	if len(cfg.Scopes) == 0 {
 		cfg.Scopes = []string{"user:email", "read:user"}
 	}

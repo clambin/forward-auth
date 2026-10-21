@@ -6,7 +6,7 @@ server:
   addrInt: :8080
   addrExt: :8081
 logger:
-  level: info
+  level: INFO
   format: text
 prometheus:
   addr: :9120
@@ -46,6 +46,6 @@ authn:
       - user:email
       - read:user
   state_ttl: 10m0s
-  select_account: false
+  select_account: true
 session:
   session_ttl: 24h0m0s

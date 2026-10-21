@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,6 +21,7 @@ import (
 	"github.com/goccy/go-yaml"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
+	"github.com/sethvargo/go-envconfig/v2"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -30,20 +31,19 @@ var (
 )
 
 func main() {
-	flag.Parse()
-	cfg, err := getConfiguration()
-	if err != nil {
-		panic(err)
-	}
-	logger := cfg.Logger.Logger(os.Stderr)
-
-	if len(cfg.Server.Key) < 32 {
-		logger.Error("token key must be at least 32 characters long")
-		os.Exit(1)
-	}
-
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	flag.Parse()
+	cfg, err := getConfiguration(ctx)
+	if err != nil {
+		panic(fmt.Errorf("failed to read configuration: %w", err))
+	}
+	if err = cfg.IsValid(); err != nil {
+		panic(fmt.Errorf("invalid configuration: %w", err))
+	}
+
+	logger := cfg.Logger.Logger(os.Stderr)
 
 	authenticator, err := authn.New(ctx, cfg)
 	if err != nil {
@@ -53,14 +53,14 @@ func main() {
 
 	authorizer := &authz.Authorizer{Rules: cfg.Authz.Rules, Groups: cfg.Authz.Groups}
 
-	handler, err := session.New(cfg.Session.SessionTTL, cfg.Server, cfg.Storage, authenticator, logger.With("component", "sessions"))
+	handler, err := session.New(cfg.Session.TTL, cfg.Server, cfg.Storage, authenticator, logger.With("component", "sessions"))
 	if err != nil {
 		logger.Error("failed to create token manager cache", "err", err)
 		os.Exit(1)
 	}
 
 	var redisClient *redis.Client
-	if cfg.Storage.Type == "redis" {
+	if strings.EqualFold(cfg.Storage.Type, "redis") {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     cfg.Storage.Redis.Addr,
 			Username: cfg.Storage.Redis.Username,
@@ -128,21 +128,29 @@ func main() {
 	}
 }
 
-func getConfiguration() (configuration.Configuration, error) {
-	cfg := configuration.DefaultConfiguration
-	b, err := os.ReadFile(*config)
-	if errors.Is(err, os.ErrNotExist) {
-		cfg.Logger.Logger(os.Stderr).Warn("no config file found, using default configuration")
-		return cfg, nil
-	}
+func getConfiguration(ctx context.Context) (configuration.Configuration, error) {
+	// start from the default configuration
+	cfg := configuration.Default()
+
+	// override from the configuration file stored on disk
+	f, err := os.Open(*config)
 	if err != nil {
-		return cfg, err
+		return cfg, fmt.Errorf("failed to open config file: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	if err = yaml.NewDecoder(f).Decode(&cfg); err != nil {
+		return cfg, fmt.Errorf("failed to decode config file: %w", err)
 	}
 
-	buf := strings.NewReader(os.ExpandEnv(string(b)))
-
-	if err = yaml.NewDecoder(buf).Decode(&cfg); err != nil {
-		return cfg, err
+	// override from environment variables
+	err = envconfig.ProcessWith(ctx, &envconfig.Config{
+		Target:           &cfg,
+		Lookuper:         envconfig.OsLookuper(),
+		DefaultOverwrite: true,
+	})
+	if err != nil {
+		return cfg, fmt.Errorf("failed to process environment variables: %w", err)
 	}
-	return cfg, err
+	return cfg, nil
 }

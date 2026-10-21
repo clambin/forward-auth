@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/clambin/forward-auth/internal/configuration"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )
@@ -19,7 +20,7 @@ type oidcProvider struct {
 }
 
 // newOIDCProvider creates a new oidcProvider.
-func newOIDCProvider(ctx context.Context, redirectURL string, cfg OIDCConfiguration) (*oidcProvider, error) {
+func newOIDCProvider(ctx context.Context, redirectURL string, cfg configuration.OIDCProviderConfiguration) (*oidcProvider, error) {
 	var err error
 	var a oidcProvider
 	if a.provider, err = oidc.NewProvider(ctx, cfg.IssuerURL); err != nil {
