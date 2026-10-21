@@ -247,7 +247,10 @@ func (m Sessions) Authenticator(redirectOnError bool) func(http.Handler) http.Ha
 				next.ServeHTTP(w, SetAuthenticatedUser(r, identity))
 				return
 			}
-			m.logger.Warn("failed to authenticate request", slog.Any("err", err))
+			m.logger.Warn("failed to authenticate request",
+				slog.Any("err", err),
+				slog.String("url", r.URL.String()),
+			)
 			if !redirectOnError {
 				http.Error(w, "failed to authenticate request", http.StatusUnauthorized)
 				return
