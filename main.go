@@ -44,7 +44,6 @@ func main() {
 	}
 
 	logger := cfg.Logger.Logger(os.Stderr)
-	logger.Debug("debug is ON")
 
 	authenticator, err := authn.New(ctx, cfg)
 	if err != nil {
