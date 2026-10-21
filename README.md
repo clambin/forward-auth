@@ -225,10 +225,8 @@ authn:
   # Effectively, how long we wait for the user to authenticate with their OIDC provider.
   state_ttl: 10m
   # select_account determines whether the user is prompted to select an account with the OIDC provider. 
-  # if true, the user is always prompted to select an account.
-  # if false, the user is not prompted if already logged in at the OIDC provider.
-  # Default: false.
-  select_account: false
+  # Default: true.
+  select_account: true
   provider:
     # OIDC provider type. oidc or github.
     type: "oidc"
