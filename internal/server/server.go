@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	loginPath = "/api/auth/login"
+	forwardPath = "/api/auth/forward"
+	loginPath   = "/api/auth/login"
 )
 
 type Authenticator interface {
@@ -60,7 +61,7 @@ func routeInternal(
 	// internal services
 	mux := http.NewServeMux()
 	mux.Handle(cfg.HealthPath, healthCheck)
-	mux.Handle("/",
+	mux.Handle(forwardPath,
 		metrics.InstrumentedHandler("forwardauth")(
 			withForwardAuthMiddleware()( // restore the request first, so the `sessions` middleware redirects for the correct request
 				sessions.Authenticator(true)(
