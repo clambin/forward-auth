@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/clambin/forward-auth/internal/configuration"
 	"golang.org/x/oauth2"
@@ -23,7 +24,7 @@ type Provider interface {
 
 // New creates a new authentication provider for the provided configuration.
 func New(ctx context.Context, config configuration.ProviderConfiguration) (Provider, error) {
-	switch config.Type {
+	switch strings.ToLower(config.Type) {
 	case "oidc":
 		a, err := newOIDCProvider(ctx, config.RedirectURL, config.OIDC)
 		if err != nil {

@@ -187,7 +187,7 @@ type StorageConfiguration struct {
 
 func (c StorageConfiguration) IsValid() error {
 	errs := validate.PrefixError("type", validate.IsEnum(c.Type, "redis", "local", ""))
-	if c.Type == "redis" {
+	if strings.EqualFold(c.Type, "redis") {
 		errs = errors.Join(errs, c.Redis.IsValid())
 	}
 	return errs

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"codeberg.org/clambin/go-common/httputils"
@@ -59,7 +60,7 @@ func main() {
 	}
 
 	var redisClient *redis.Client
-	if cfg.Storage.Type == "redis" {
+	if strings.EqualFold(cfg.Storage.Type, "redis") {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     cfg.Storage.Redis.Addr,
 			Username: cfg.Storage.Redis.Username,
