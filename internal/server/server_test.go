@@ -36,7 +36,7 @@ func TestServer(t *testing.T) {
 	// internal
 
 	// forward-auth
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, forwardPath, nil)
 	resp := httptest.NewRecorder()
 	hInt.ServeHTTP(resp, req)
 	require.Equal(t, http.StatusSeeOther, resp.Code)
