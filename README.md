@@ -1,5 +1,3 @@
-![logo.png](assets/images/logo.png)
-
 # Forward-Auth
 
 [![release](https://img.shields.io/github/v/tag/clambin/forward-auth?color=green&label=release&style=plastic)](https://github.com/clambin/forward-auth/releases)
@@ -8,16 +6,19 @@
 [![Build](https://github.com/clambin/forward-auth/actions/workflows/build.yaml/badge.svg)](https://github.com/clambin/forward-auth/actions)
 [![license](https://img.shields.io/github/license/clambin/forward-auth?style=plastic)](LICENSE.md)
 
-`forward-auth` is a minimal, modern implementation of Traefik’s **forwardAuth** middleware. 
-It protects your web applications with OIDC authentication and flexible authorization rules.
+![logo.png](assets/images/logo.png)
 
-`forward-auth` is a rewrite of [traefik-simple-auth](https://github.com/clambin/traefik-simple-auth), 
-which began as a reimplementation of Thom Seddon's [traefik-forward-auth](https://github.com/thomseddon/traefik-forward-auth).
-The main differences with the original are:
+`forward-auth` is a minimal, modern authentication and authorization gateway for [Traefik](https://traefik.io/) using its **forwardAuth** middleware. It protects your web applications with Single Sign-On (SSO) via OpenID Connect (OIDC) or GitHub, fine-grained access rules, and centralized session management.
 
-- authorization rules express which user has access to which application
-- sessions are stored centrally so sessions can be revoked. The browser cookie holds a short-lived JWT, renewed against the session store, 
-- lightweight UI to manage a user's sessions
+## ✨ Features
+
+- 🔐 **Single Sign-On (SSO)**: Authenticate users via any OIDC provider (Google, Authentik, Keycloak, Codeberg) or GitHub OAuth.
+- 🛡️ **Flexible Authorization**: Define access rules by domain, wildcard domains, individual user email, or named user groups.
+- 🛑 **Central Session Store & Revocation**: Store sessions in memory or in Redis to allow instant session invalidation across multiple instances.
+- 💻 **Self-Service Session UI**: Built-in web dashboard allowing users to view their active sessions, see device info, and revoke sessions.
+- 🔄 **Seamless Silent Renewal**: Short-lived browser cookies renewed automatically in the background without interrupting the user.
+- 👤 **Identity Headers**: Passes authenticated user email, name, and groups to upstream applications via HTTP headers.
+- 📊 **Observability**: Prometheus metrics and ready-to-use Grafana dashboards.
 
 ---
 
@@ -25,159 +26,88 @@ The main differences with the original are:
 
 - [Overview](#overview)
 - [How It Works](#how-it-works)
-  - [High-Level Flow](#high-level-flow)
-  - [Key Components](#key-components)
-- [Installation](#installation)
+- [Quick Start](#quick-start)
 - [Configuration](#configuration)
   - [Example Configuration](#example-configuration)
-- [Identity Provider Configuration](#identity-provider-configuration)
+  - [Environment Variables](#environment-variables)
+- [Identity Provider Setup](#identity-provider-setup)
 - [Traefik Integration](#traefik-integration)
-  - [Middleware](#middleware)
-  - [Authentication Endpoints & Routing](#authentication-endpoints--routing)
-- [Session Management](#session-management)
-  - [Session Overview (UI)](#session-overview-ui)
-  - [What is a Session?](#what-is-a-session)
-  - [Deleting Sessions via UI](#deleting-sessions-via-ui)
-  - [Logging Out](#logging-out)
-- [Metrics](#metrics)
+  - [1. Define the forwardAuth Middleware](#1-define-the-forwardauth-middleware)
+  - [2. Route the Auth Service](#2-route-the-auth-service)
+  - [3. Protect Your Applications](#3-protect-your-applications)
+- [Authorization Rules](#authorization-rules)
+- [Session Management & UI](#session-management--ui)
+- [Metrics & Monitoring](#metrics--monitoring)
 - [Troubleshooting](#troubleshooting)
-- [Author](#author)
 - [License](#license)
 
 ---
 
 ## Overview
 
-This service acts as an authentication and authorization gateway in front of your applications via Traefik.
+`forward-auth` sits alongside Traefik and intercepts incoming web requests before they reach your applications:
 
 ```
-Client ──► Traefik ──► forward-auth ──► OIDC Provider
-              │
-              └──► Upstream service (if authorized)
+                  ┌──────────────┐
+                  │ OIDC/GitHub  │
+                  │   Provider   │
+                  └──────▲───────┘
+                         │ 3. Authenticate
+                         ▼
+Browser ──1. Request──► Traefik ──2. Verify──► forward-auth
+                          │
+                          └──4. Forward (if allowed)──► Upstream App
 ```
 
-**Flow:**
-
-1. Request hits Traefik
-2. Traefik calls `forward-auth`
-3. If the cookie holds a valid JWT → request is allowed
-4. If the JWT has expired → it is renewed using its refresh token, provided the session still exists in the store
-5. Otherwise → redirect to OIDC provider
-6. After login → session is created and stored, and a JWT is sent back in the session cookie
-
+1. **Request**: A user navigates to a protected application.
+2. **Verify**: Traefik asks `forward-auth` to verify the user's session cookie.
+3. **Authenticate**: If the user is not logged in, `forward-auth` redirects them to your identity provider.
+4. **Access**: Once authenticated and authorized according to your rules, Traefik forwards the request downstream with user identity headers.
 
 ---
 
 ## How It Works
 
-`forward-auth` uses **OIDC authentication** to authenticate the user. Authenticated users are allocated a **session**,
-which is kept in the session store. The browser receives a signed **JWT** in an **HTTP cookie**, which references that session.
+From a user perspective, the experience is simple and seamless:
 
-### High-Level Flow
-
-```
-┌─────────┐      ┌─────────┐      ┌──────────────┐      ┌───────────────┐     ┌──────────────┐
-│ Browser │      │ Traefik │      │ forward-auth │      │ OIDC Provider │     │ Application  │   
-└────┬────┘      └────┬────┘      └──────┬───────┘      └──────┬────────┘     └──────┬───────┘
-     │                │                  │                     │                     │
-     │ Request        │ forwardAuth      │                     │                     │
-     │───────────────►│─────────────────►│                     │                     │
-     │                │                  │ No session          │                     │
-     │ Redirect to OIDC provider (303)   │                     │                     │
-     │◄───────────────│◄─────────────────│                     │                     │
-     │                │                  │                     │                     │
-     │ Call OIDC provider                │                     │                     │
-     │────────────────────────────────────────────────────────►│                     │
-     │                │                  │  User logs in       │                     │
-     │◄────────────────────────────────────────────────────────│                     │
-     │                │                  │                     │                     │
-     │ Login callback │                  │                     │                     │
-     │───────────────►│─────────────────►│                     │                     │
-     │                │                  │  Get User details   │                     │
-     │                │                  │────────────────────►│                     │
-     │                │                  │◄────────────────────│                     │
-     │                │                  │  Create session     │                     │
-     │                │                  │  Set cookie         │                     │
-     │                │ Redirect to      │                     │                     │
-     │                │ original request │                     │                     │
-     │◄───────────────│◄─────────────────│                     │                     │
-     │                │                  │                     │                     │
-     │ Retry request  │ forwardAuth      │                     │                     │
-     │───────────────►│─────────────────►│                     │                     │
-     │                │                  │                     │                     │
-     │                │                  │  Validate JWT       │                     │
-     │                │                  │  (renew if expired) │                     │
-     │                │   OK (2xx)       │                     │                     │
-     │                │◄─────────────────│                     │                     │
-     │                │                  │                     │                     │
-     │                │ Perform request  │                     │                     │
-     │                │─────────────────────────────────────────────────────────────►│
-```
+1. **Login**: When visiting a protected domain for the first time, you are redirected to log in with your identity provider (e.g. Google or GitHub).
+2. **Session Cookie**: After successful login, a secure session cookie is stored in your browser, and you are redirected to your original destination.
+3. **Automatic Renewal**: Your session remains valid as long as you use it. Sessions renew automatically in the background without prompting you to log in repeatedly.
+4. **Session Control**: If you log out or revoke a session from the UI, the session is removed from the central store, immediately revoking access.
 
 ---
 
-### Key Components
+## Quick Start
 
-#### forwardAuth (Traefik)
+### Container Image
 
-- `/api/auth/forwardauth`
-- Called for every request
-- Returns:
-    - ✅ `2xx` → allow request
-    - ❌ `303` → redirect to login
-    - ❌ `403` → forbidden
+Container images are published to GitHub Container Registry:
 
-#### Login Endpoint
+```bash
+docker pull ghcr.io/clambin/traefik-forward-auth:latest
+```
 
-- `/api/auth/login`
-- Handles authentication callback
-- Creates session
-- Protects against CSRF attacks (via CSRF state token)
+Images support both `linux/amd64` and `linux/arm64`.
 
-#### Session Store
+### Running with Docker
 
-- Stores session data (ID, user, timestamps, user agent, hashes of the current and previous refresh tokens)
-- Backends:
-    - `local` (in-memory)
-    - `redis`
-
-Note: Redis must be 6.2 or higher.
-
-#### Session Cookie
-
-- Stored in browser (`HttpOnly`, `Secure`, `SameSite=Lax`)
-- Contains a JWT, signed with `server.key`, holding:
-    - the session ID
-    - the user's identity
-    - a refresh token
-- The JWT is valid for 15 minutes.
-- Once the JWT has expired, `forward-auth` renews it: the refresh token is checked against the session store and,
-  if the session still exists and matches the refresh token, a new JWT is issued with a new refresh token and is sent back in the cookie.
-- Refresh tokens are rotated on every renewal. For a few seconds after rotation, the previous refresh token is still accepted,
-  so concurrent requests carrying the same expired JWT can all renew it. After that, only the current refresh token is accepted.
-
-#### Protected application(s)
-
-- Protected by `forwardAuth` middleware
-- Authenticated user accessible via `X-Forwarded-User-*` headers (email address, name, groups)
-
----
-
-## Installation
-
-Container images are available on [ghcr.io](https://ghcr.io/clambin/traefik-forward-auth). Images are available for linux/amd64 and linux/arm64.
+```bash
+docker run -d \
+  --name forward-auth \
+  -p 8080:8080 \
+  -p 8081:8081 \
+  -v $(pwd)/config.yaml:/etc/forward-auth/config.yaml:ro \
+  -e SERVER_KEY="your-random-secret-key-at-least-32-chars-long" \
+  -e AUTHN_PROVIDER_OIDC_CLIENT_ID="your-oidc-client-id" \
+  -e AUTHN_PROVIDER_OIDC_CLIENT_SECRET="your-oidc-client-secret" \
+  ghcr.io/clambin/traefik-forward-auth:latest
+```
 
 ---
 
 ## Configuration
 
-Configuration is loaded from:
-
-```
-/etc/forward-auth/config.yaml
-```
-
-Override with:
+Configuration is loaded from `/etc/forward-auth/config.yaml` by default. You can override the path using the `--config` flag:
 
 ```bash
 forward-auth --config /path/to/config.yaml
@@ -187,79 +117,50 @@ forward-auth --config /path/to/config.yaml
 
 ```yaml
 server:
-  # HTTP server address for internal services (forward-auth, health check). Default: ":8080".
+  # Internal address for Traefik forwardAuth verification and health checks
   addrInt: :8080
-  # HTTP server address for external services (login, UI, api). Default: ":8081".
+  # External address for browser login callbacks, session UI, and API
   addrExt: :8081
-  # HTTP Cookie Name. Default: "forward-auth-session".
+  # Name of the HTTP session cookie
   cookieName: forward-auth-session
-  # Domain for which the cookie is valid. 
-  # All protected hostnames (including auth) need to be subdomains of this domain.
+  # Root domain for which the cookie is valid (must cover all protected subdomains)
   domain: .example.com
-  # Key to sign and verify the JWT.
-  # Must be at least 32 characters long.
-  # Overridden by the environment value "SERVER_KEY".
-  key: ""
+  # Secret key used to sign session tokens (min 32 characters; can be set via SERVER_KEY)
+  key: "your-random-secret-key-at-least-32-chars-long"
+
 logger:
-  # Logging level. Default: "info".
-  level: info
-  # Log format. json or text. Default: "text".
-  format: json
+  level: info       # debug, info, warn, error
+  format: text      # text or json
 
 prometheus:
-  # Prometheus metrics listener. Default: ":9120".
   addr: :9120
-  # prometheus metrics path. Default: "/metrics".
   path: /metrics
 
-# Health check. Note: only relevant when using Redis as storage 
 health:
-  # Health check listener. Default ":8888".
   addr: :8888
-  # Health check path. Default: "/healthz".
   path: /healthz
 
-
 authn:
-  # Maximum lifetime of a CSRF state token. Default: 10m.
-  # Effectively, how long we wait for the user to authenticate with their OIDC provider.
+  # How long a login attempt remains valid
   state_ttl: 10m
-  # select_account determines whether the user is prompted to select an account with the OIDC provider. 
-  # Default: true.
+  # Prompt user to choose account at the provider
   select_account: true
   provider:
-    # OIDC provider type. oidc or github.
-    type: "oidc"
-    # OIDC redirect URL: OIDC redirects to this URL after the user authenticates.
+    type: "oidc"    # oidc or github
+    # Where your provider redirects after login (must be publicly reachable)
     redirect_url: https://auth.example.com/api/auth/login
-    # OIDC-related configuration.
     oidc:
-      # OIDC client ID.
-      # Overridden by the environment value "AUTHN_PROVIDER_OIDC_CLIENT_ID".
-      client_id: ""
-      # OIDC client secret.
-      # Overridden by the environment value "AUTHN_PROVIDER_OIDC_CLIENT_SECRET".
-      client_secret: ""
-      # OIDC issuer URL.
       issuer_url: https://accounts.google.com
-      # scopes to request from the OIDC provider. 
-      # only override this if you know what you're doing.
+      client_id: ""       # or set AUTHN_PROVIDER_OIDC_CLIENT_ID
+      client_secret: ""   # or set AUTHN_PROVIDER_OIDC_CLIENT_SECRET
       scopes: [ openid, email, profile ]
-    # GitHub-related configuration. Only required for type github.
     github:
-      # Oauth2 client ID.
-      # Overridden by the environment value "AUTHN_PROVIDER_GITHUB_CLIENT_ID".
-      client_id: ""
-      # Oauth2 client secret.
-      # Overridden by the environment value "AUTHN_PROVIDER_GITHUB_CLIENT_SECRET".
-      client_secret: ""
-      # scopes to request from github. 
-      # only override this if you know what you're doing.
-      scopes: [ user:email, read:user ]
+      client_id: ""       # or set AUTHN_PROVIDER_GITHUB_CLIENT_ID
+      client_secret: ""   # or set AUTHN_PROVIDER_GITHUB_CLIENT_SECRET
+      scopes: [ "user:email", "read:user" ]
 
 authz:
-  # Authorization rules. A request is allowed if it matches at least one rule.
-  # If a rule contains both users and groups, the rule is allowed if the user matches either list.
+  # Requests are allowed if they match at least one rule.
   rules:
     - domain: "*.example.com"
       users:
@@ -273,90 +174,92 @@ authz:
         - admin@example.com
 
 storage:
-  # Session and CSRF state storage type. local or redis. Default: "local".
-  type: redis
-  # Redis configuration.
-  # Use environment variables to keep these credentials out of the configuration file.
-  redis:
-    addr: redis:6379
-    # Overridden by the environment value "STORAGE_REDIS_USERNAME".
-    username: ""
-    # Overridden by the environment value "STORAGE_REDIS_PASSWORD".
-    password: ""
-    db: 0
+  type: local       # local (in-memory) or redis
+  # redis:
+  #   addr: redis:6379
+  #   password: ""  # or set STORAGE_REDIS_PASSWORD
+  #   db: 0
 
 session:
-  # Session lifetime. Default: 24h. 
-  # The session is invalidated after this time, and the user needs to log in again.
+  # Maximum session duration before requiring a fresh login
   session_ttl: 24h
 ```
 
+### Environment Variables
+
+Sensitive values can be set or overridden via environment variables:
+
+| Environment Variable                  | Config Equivalent                     | Description                                          |
+|---------------------------------------|---------------------------------------|------------------------------------------------------|
+| `SERVER_KEY`                          | `server.key`                          | Secret key for signing session tokens (min 32 chars) |
+| `AUTHN_PROVIDER_OIDC_CLIENT_ID`       | `authn.provider.oidc.client_id`       | OIDC Client ID                                       |
+| `AUTHN_PROVIDER_OIDC_CLIENT_SECRET`   | `authn.provider.oidc.client_secret`   | OIDC Client Secret                                   |
+| `AUTHN_PROVIDER_GITHUB_CLIENT_ID`     | `authn.provider.github.client_id`     | GitHub OAuth App Client ID                           |
+| `AUTHN_PROVIDER_GITHUB_CLIENT_SECRET` | `authn.provider.github.client_secret` | GitHub OAuth App Client Secret                       |
+| `STORAGE_REDIS_USERNAME`              | `storage.redis.username`              | Redis username                                       |
+| `STORAGE_REDIS_PASSWORD`              | `storage.redis.password`              | Redis password                                       |
+
 ---
 
-## Identity Provider Configuration
+## Identity Provider Setup
 
-`forward-auth` relies on an external identity provider to authenticate users.
-Currently, it supports the following providers:
+`forward-auth` supports any standard **OIDC** provider (e.g. Google, Authentik, Keycloak, Codeberg) as well as **GitHub**.
 
-- OIDC
-- GitHub
+When registering your OAuth application with your provider:
+1. Set the **Redirect URI** to your `forward-auth` login URL:
+   ```
+   https://auth.example.com/api/auth/login
+   ```
+2. Copy the resulting Client ID and Client Secret into your `config.yaml` or environment variables.
 
-Only one provider is supported at a time. 
-
-Once the provider has been configured, add the relevant information in the authn.provider section in the configuration file:
-type, client_id, client_secret, issuer_url (only applicable for oidc) and redirect_url.
-
-Detailed instructions for various providers are available in [PROVIDERS.md](PROVIDERS.md).
-
-Configure your provider the following redirect URL:
-
-```
-https://auth.example.com/api/auth/login
-```
+For step-by-step setup guides for Google, GitHub, and Codeberg, see [PROVIDERS.md](PROVIDERS.md).
 
 ---
 
 ## Traefik Integration
 
-### Middleware
+Integrating with Traefik requires three straightforward steps:
+
+### 1. Define the forwardAuth Middleware
+
+Create a Traefik Middleware pointing to `forward-auth`'s internal verification endpoint. Example using a Kubernetes CRD:
 
 ```yaml
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: forward-auth
+  namespace: default
 spec:
   forwardAuth:
+    # Internal address where forward-auth is reachable by Traefik
     address: http://forward-auth:8080/api/auth/forwardauth
     trustForwardHeader: true
+    # Headers injected into downstream requests for the authenticated user
     authResponseHeaders:
       - X-Forwarded-User-Email
       - X-Forwarded-User-Name
       - X-Forwarded-User-Groups
+    # Propagate renewed session cookies back to the browser
     addAuthCookiesToResponse:
       - forward-auth-session
 ```
 
----
+### 2. Route the Auth Service
 
-### Authentication Endpoints & Routing
-
-You must expose `forward-auth` via Traefik for browser-based login.
-
-#### Example HTTPRoute
+Expose `forward-auth`'s external port (`addrExt`, default `:8081`) under your auth domain (e.g., `auth.example.com`) without the `forwardAuth` middleware so users can reach the login callback and session management UI:
 
 ```yaml
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: forward-auth
+  name: forward-auth-route
 spec:
   parentRefs:
     - name: traefik
   hostnames:
     - auth.example.com
   rules:
-    # Login endpoint (no middleware)
     - matches:
         - path:
             type: PathPrefix
@@ -366,124 +269,114 @@ spec:
           port: 8081
 ```
 
+*(For Traefik `IngressRoute` or standard Kubernetes `Ingress`, create a route pointing `auth.example.com` to service port `8081` without the auth middleware attached).*
+
+### 3. Protect Your Applications
+
+Apply the `forward-auth` middleware to any ingress route or service you wish to protect:
+
+```yaml
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: my-app
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`app.example.com`)
+      kind: Rule
+      middlewares:
+        - name: forward-auth
+      services:
+        - name: my-app-service
+          port: 80
+```
+
 ---
 
-## Session Management
+## Authorization Rules
 
-`forward-auth` provides basic session management capabilities, both via a UI and an HTTP API.
+You can restrict access to services using flexible matching rules under `authz`:
+
+- **Domain matching**: Match exact hosts (`app.example.com`) or wildcards (`*.example.com`).
+- **User matching**: Allow specific email addresses.
+- **Group matching**: Group users together for clean role-based access.
+
+### Examples
+
+```yaml
+authz:
+  # Define reusable groups
+  groups:
+    - name: engineering
+      users:
+        - alice@example.com
+        - bob@example.com
+    - name: admins
+      users:
+        - charlie@example.com
+
+  # Define access rules
+  rules:
+    # Only admins can access the admin portal
+    - domain: admin.example.com
+      groups:
+        - admins
+
+    # Any member of engineering or user@example.com can access internal tools
+    - domain: "*.internal.example.com"
+      groups:
+        - engineering
+      users:
+        - user@example.com
+```
+
+If no rules are specified, all successfully authenticated users are permitted.
 
 ---
 
-### Session Overview (UI)
+## Session Management & UI
 
-The service exposes a UI where you can:
+`forward-auth` includes a lightweight, built-in session management dashboard available at the root of your auth domain (e.g. `https://auth.example.com/`).
 
-- View all active sessions
-- Inspect session details (user, timestamps, etc.)
-- Delete individual sessions
+### What You Can Do in the UI:
 
-This UI is served by `forward-auth` itself and is **protected by the forwardAuth middleware**, meaning:
-
-- You must be authenticated to access it
-- Authorization rules (`authz.rules`) still apply
-
-Typical access:
+- 📋 **Active Sessions**: View all your currently active login sessions.
+- 📱 **Device Details**: See client IP, browser user agent, login time, and last activity time.
+- 🚪 **Remote Logout**: Revoke specific sessions (e.g. logging out a lost phone or remote workstation) with a single click.
 
 ```
 https://auth.example.com/
 ```
 
----
+### Storage Backends
 
-### What is a Session?
-
-A session represents an authenticated user. It is made up of two parts:
-
-**The session cookie** holds a signed JWT, containing:
-
-- Session ID
-- User identity (subject, email, name)
-- Refresh token
-- Expiration time (15 minutes after issue/renewal)
-
-**The session store** (local or Redis) holds, for each session:
-
-- Session ID
-- User identity
-- Hashes of the current and previous refresh tokens (the refresh tokens themselves are never stored)
-- A per-session secret, used to derive the next refresh token
-- The time the refresh token was last rotated
-- Last user agent
-- Issued at / last seen timestamps
-
-The JWT's lifecycle:
-
-1. At login, a new session is created in the store and a JWT is issued in the session cookie.
-2. Once the JWT expires, `forward-auth` looks up the session in the store and checks the JWT's refresh token
-   against the stored hashes:
-   - If it matches the **current** refresh token, the refresh token is rotated: a new refresh token is derived
-     from the current one and the session's secret. The current hash becomes the previous hash, and the new refresh token's hash
-     becomes the current hash.
-   - If it matches the **previous** refresh token, and the refresh token was rotated less than 10 seconds ago,
-     the session was already renewed (typically by a concurrent request). The refresh token is not rotated again:
-     the JWT receives the current refresh token instead. After those 10 seconds, the previous refresh token is rejected. 
-   In both cases, the session's last seen timestamp and user agent are updated, and a renewed JWT is sent back in the cookie.
-3. If the session no longer exists (it was deleted, or it expired after `session.session_ttl` without being renewed),
-   or the refresh token matches neither the current refresh token nor (within the 10-second grace period) the previous one,
-   the JWT cannot be renewed and the user is redirected to the identity provider to log in again.
-
-Since the next refresh token is derived from the current one, renewing the same refresh token always produces
-the same result. A browser often sends several requests at once (e.g. page assets). If these carry the same expired JWT,
-they all receive the same renewed refresh token, regardless of the order in which they are processed.
-
-Because the refresh token is rotated on every renewal, an expired JWT can effectively only be renewed once.
-If a copy of an old JWT (e.g. a stolen cookie) is presented more than 10 seconds after the session has been renewed,
-its refresh token is no longer accepted and renewal fails.
-
-### Deleting Sessions via UI
-
-From the UI, you can:
-
-- See all active sessions
-- Manually revoke sessions (e.g. logout other devices)
-
-This is useful for:
-
-- Security (invalidate compromised sessions)
-- Administration (force logout)
+- **`local`**: In-memory session store. Fast and requires zero configuration. Ideal for single-instance deployments.
+- **`redis`**: Centralized session store. Recommended for multi-replica deployments to share sessions and allow instant revocation across instances.
 
 ---
 
-### Logging Out
+## Metrics & Monitoring
 
-To log out a session:
+`forward-auth` exposes Prometheus metrics on `/metrics` (`:9120` by default):
 
-1. Call the delete endpoint for that session
-2. The session is removed from the store
-3. Subsequent requests are redirected to the identity provider
+| Metric                          | Type    | Description                                       |
+|---------------------------------|---------|---------------------------------------------------|
+| `forward_auth_session_count`    | Gauge   | Current number of active sessions                 |
+| `forward_auth_state_count`      | Gauge   | Current number of in-flight authentication states |
+| `http_request_duration_seconds` | Summary | Request latency distribution in seconds           |
+| `http_requests_total`           | Counter | Total HTTP requests handled                       |
 
-Users can only delete their own sessions. The session IDs of a user's sessions are shown in the UI,
-or can be retrieved via the API.
-
-## Metrics
-
-`forward-auth` exposes the following Prometheus metrics on the `/metrics` endpoint:
-
-| metric                        | type    | labels                | help                            |
-|-------------------------------|---------|-----------------------|---------------------------------|
-| forward_auth_session_count    | GAUGE   |                       | Number of active sessions       |
-| forward_auth_state_count      | GAUGE   |                       | Number of active states         |
-| http_request_duration_seconds | SUMMARY | code, handler, method | request duration in seconds     |
-| http_requests_total           | COUNTER | code, handler, method | total requests processed        |
-
-A sample Grafana dashboard is available [here](assets/grafana/dashboards.yaml).
+A sample Grafana dashboard configuration is included in [assets/grafana/dashboards.yaml](assets/grafana/dashboards.yaml).
 
 ![screenshot.png](assets/images/screenshot.png)
+
 ---
 
 ## Troubleshooting
 
-See [Troubleshooting](TROUBLESHOOTING.md).
+Having trouble setting up `forward-auth`? Check out the [Troubleshooting Guide](TROUBLESHOOTING.md) for solutions to common issues like redirect loops, cookie domain problems, and 401/403 errors.
 
 ---
 
