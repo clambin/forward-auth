@@ -57,32 +57,32 @@ func setUserHeaders(w http.ResponseWriter, identity provider.Identity, groups []
 }
 
 // withForwardAuthMiddleware returns a middleware that restores the original request
-// sent in the Traefik forwardAuth request headers.
+// sent in the traefik forwardAuth request headers.
 func withForwardAuthMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var err error
-			r = r.Clone(r.Context())
-			r.Method, r.URL, err = OriginalRequest(r)
+			r2, err := originalRequest(r)
 			if err != nil {
 				http.Error(w, "failed to restore original request", http.StatusBadRequest)
 				return
 			}
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, r2)
 		})
 	}
 }
 
-// OriginalRequest restores the original request method and URL from the Traefik forwardAuthrequest headers.
-// This allows us to route forwardAuth requests vs. logout requests (/_oauth/logout) to the correct handler.
-func OriginalRequest(r *http.Request) (string, *url.URL, error) {
-	path := cmp.Or(r.Header.Get("X-Forwarded-Uri"), "/")
-
-	u, err := url.ParseRequestURI(path)
-	if err == nil {
-		u.Scheme = cmp.Or(r.Header.Get("X-Forwarded-Proto"), "https")
-		u.Host = r.Header.Get("X-Forwarded-Host")
+// originalRequest restores the original request method and URL from the traefik forwardAuth request headers,
+// so the forwardAuth handler can perform authorization.
+func originalRequest(r *http.Request) (*http.Request, error) {
+	r = r.Clone(r.Context())
+	var err error
+	r.URL, err = url.ParseRequestURI(cmp.Or(r.Header.Get("X-Forwarded-Uri"), "/"))
+	if err != nil {
+		return nil, err
 	}
+	r.URL.Scheme = cmp.Or(r.Header.Get("X-Forwarded-Proto"), "https")
+	r.URL.Host = r.Header.Get("X-Forwarded-Host")
+	r.Method = cmp.Or(r.Header.Get("X-Forwarded-Method"), http.MethodGet)
 
-	return cmp.Or(r.Header.Get("X-Forwarded-Method"), http.MethodGet), u, err
+	return r, err
 }

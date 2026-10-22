@@ -16,7 +16,7 @@ which began as a reimplementation of Thom Seddon's [traefik-forward-auth](https:
 The main differences with the original are:
 
 - authorization rules express which user has access to which application
-- sessions are stored centrally: the browser cookie holds a short-lived JWT that is renewed against the session store, so sessions can be revoked
+- sessions are stored centrally so sessions can be revoked. The browser cookie holds a short-lived JWT, renewed against the session store, 
 - lightweight UI to manage a user's sessions
 
 ---
@@ -88,7 +88,6 @@ which is kept in the session store. The browser receives a signed **JWT** in an 
      │                │                  │                     │                     │
      │ Call OIDC provider                │                     │                     │
      │────────────────────────────────────────────────────────►│                     │
-     │                │                  │                     │                     │
      │                │                  │  User logs in       │                     │
      │◄────────────────────────────────────────────────────────│                     │
      │                │                  │                     │                     │
@@ -97,9 +96,10 @@ which is kept in the session store. The browser receives a signed **JWT** in an 
      │                │                  │  Get User details   │                     │
      │                │                  │────────────────────►│                     │
      │                │                  │◄────────────────────│                     │
-     │                │                  │                     │                     │
      │                │                  │  Create session     │                     │
      │                │                  │  Set cookie         │                     │
+     │                │ Redirect to      │                     │                     │
+     │                │ original request │                     │                     │
      │◄───────────────│◄─────────────────│                     │                     │
      │                │                  │                     │                     │
      │ Retry request  │ forwardAuth      │                     │                     │

@@ -152,11 +152,22 @@ func TestOriginalRequest(t *testing.T) {
 				req.Header.Set(k, v)
 			}
 
-			method, path, err := OriginalRequest(req)
+			req, err := originalRequest(req)
 			require.NoError(t, err)
-			assert.Equal(t, tt.want.method, method)
-			assert.Equal(t, tt.want.path, path.String())
+			assert.Equal(t, tt.want.method, req.Method)
+			assert.Equal(t, tt.want.path, req.URL.String())
 		})
+	}
+}
+
+func BenchmarkOriginalRequest(b *testing.B) {
+	req := forwardAuthRequest("https://example.com")
+	b.ReportAllocs()
+	for b.Loop() {
+		_, err := originalRequest(req)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -176,13 +187,3 @@ func (f *fakeAuthorizer) GroupsForUser(_ string) []string {
 func (f *fakeAuthorizer) Allow(_ *url.URL, _ string) bool {
 	return f.allow
 }
-
-/*
-var _ Metrics = (*fakeMetrics)(nil)
-
-type fakeMetrics struct{}
-
-func (f fakeMetrics) InstrumentedHandler(_ string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler { return next }
-}
-*/
