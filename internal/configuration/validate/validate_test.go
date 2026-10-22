@@ -39,12 +39,33 @@ func TestIsURL(t *testing.T) {
 		{"no port", "http://prometheus-alertmanager.monitoring.svc", require.NoError},
 		{"missing scheme", "prometheus-alertmanager.monitoring.svc:9093", require.Error},
 		{"blank", "", require.Error},
+		{"blank", "\001", require.Error},
 		{"invalid url", "localhost", require.Error},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := IsURL(tt.input)
+			tt.want(t, err)
+		})
+	}
+}
+
+func TestIsTCPListener(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  require.ErrorAssertionFunc
+	}{
+		{"valid tcp target", "127.0.0.1:8080", require.NoError},
+		{"port only", ":8080", require.NoError},
+		{"blank", "", require.Error},
+		{"invalid tcp target", "localhost", require.Error},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := IsTCPListener(tt.input)
 			tt.want(t, err)
 		})
 	}
@@ -57,7 +78,7 @@ func TestIsTCPTarget(t *testing.T) {
 		want  require.ErrorAssertionFunc
 	}{
 		{"valid tcp target", "127.0.0.1:8080", require.NoError},
-		{"port only", ":8080", require.NoError},
+		{"port only", ":8080", require.Error},
 		{"blank", "", require.Error},
 		{"invalid tcp target", "localhost", require.Error},
 	}
@@ -150,4 +171,49 @@ func TestIsAbsolutePath(t *testing.T) {
 			tt.want(t, IsAbsolutePath(tt.input))
 		})
 	}
+}
+
+type validChild struct{}
+
+func (validChild) IsValid() error { return nil }
+
+type invalidChild struct{}
+
+func (invalidChild) IsValid() error { return assert.AnError }
+
+type plainChild struct{}
+
+func TestIsValid(t *testing.T) {
+	tests := []struct {
+		name  string
+		input any
+		want  require.ErrorAssertionFunc
+	}{
+		{"not a struct", 1, require.Error},
+		{"empty struct", struct{}{}, require.NoError},
+		{"valid child", struct{ A validChild }{}, require.NoError},
+		{"invalid child", struct{ A invalidChild }{}, require.Error},
+		{"mixed children", struct {
+			A validChild
+			B invalidChild
+		}{}, require.Error},
+		{"child without IsValid", struct{ A plainChild }{}, require.NoError},
+		{"unexported child", struct{ a invalidChild }{}, require.NoError},
+		{"non-struct field", struct{ A string }{}, require.NoError},
+		{"nested struct", struct{ A struct{ B invalidChild } }{}, require.Error},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.want(t, IsValid(tt.input))
+		})
+	}
+
+	err := IsValid(struct {
+		A invalidChild `yaml:"a,omitempty"`
+		B invalidChild
+	}{})
+	require.Error(t, err)
+	assert.Len(t, err.(interface{ Unwrap() []error }).Unwrap(), 2)
+	assert.Equal(t, "a: "+assert.AnError.Error()+"\nb: "+assert.AnError.Error(), err.Error())
 }

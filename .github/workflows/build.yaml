@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - main
-      - validate
+      - config
 permissions:
   contents: read
   packages: write

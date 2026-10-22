@@ -67,15 +67,7 @@ type Configuration struct {
 }
 
 func (c Configuration) IsValid() error {
-	return errors.Join(
-		validate.PrefixError("server", c.Server.IsValid()),
-		validate.PrefixError("logger", c.Logger.IsValid()),
-		validate.PrefixError("prometheus", c.Prometheus.IsValid()),
-		validate.PrefixError("storage", c.Storage.IsValid()),
-		validate.PrefixError("authz", c.Authz.IsValid()),
-		validate.PrefixError("authn", c.Authn.IsValid()),
-		validate.PrefixError("session", c.Session.IsValid()),
-	)
+	return validate.IsValid(c)
 }
 
 type ServerConfiguration struct {
@@ -93,8 +85,8 @@ func (c ServerConfiguration) IsValid() error {
 		validate.PrefixError("key", validate.IsMinLength(c.Key, 32)),
 		validate.PrefixError("domain", validate.IsNotZero(c.Domain)),
 		validate.PrefixError("healthPath", validate.IsAbsolutePath(c.HealthPath)),
-		validate.PrefixError("addrInt", validate.IsTCPTarget(c.AddrInt)),
-		validate.PrefixError("addrExt", validate.IsTCPTarget(c.AddrExt)),
+		validate.PrefixError("addrInt", validate.IsTCPListener(c.AddrInt)),
+		validate.PrefixError("addrExt", validate.IsTCPListener(c.AddrExt)),
 	)
 }
 
@@ -105,6 +97,7 @@ type LoggerConfiguration struct {
 
 func (c LoggerConfiguration) IsValid() error {
 	return errors.Join(
+		// don't need to validate Level, as it's already validated during unmarshaling
 		validate.PrefixError("format", validate.IsEnum(c.Format, "text", "json")),
 	)
 }
@@ -138,7 +131,7 @@ type PrometheusConfiguration struct {
 
 func (c PrometheusConfiguration) IsValid() error {
 	return errors.Join(
-		validate.PrefixError("addr", validate.IsTCPTarget(c.Addr)),
+		validate.PrefixError("addr", validate.IsTCPListener(c.Addr)),
 		validate.PrefixError("path", validate.IsAbsolutePath(c.Path)),
 	)
 }
