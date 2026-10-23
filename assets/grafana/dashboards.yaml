@@ -56,7 +56,7 @@ spec:
             "overrides": []
           },
           "gridPos": {
-            "h": 9,
+            "h": 6,
             "w": 8,
             "x": 0,
             "y": 0
@@ -162,7 +162,7 @@ spec:
             "overrides": []
           },
           "gridPos": {
-            "h": 9,
+            "h": 6,
             "w": 8,
             "x": 8,
             "y": 0
@@ -261,7 +261,7 @@ spec:
             "overrides": []
           },
           "gridPos": {
-            "h": 9,
+            "h": 6,
             "w": 8,
             "x": 16,
             "y": 0
@@ -327,7 +327,7 @@ spec:
             "h": 3,
             "w": 4,
             "x": 0,
-            "y": 9
+            "y": 6
           },
           "id": 9,
           "options": {
@@ -400,7 +400,7 @@ spec:
             "h": 3,
             "w": 4,
             "x": 4,
-            "y": 9
+            "y": 6
           },
           "id": 7,
           "options": {
@@ -496,10 +496,10 @@ spec:
             "overrides": []
           },
           "gridPos": {
-            "h": 9,
+            "h": 6,
             "w": 8,
             "x": 8,
-            "y": 9
+            "y": 6
           },
           "id": 13,
           "options": {
@@ -595,10 +595,10 @@ spec:
             "overrides": []
           },
           "gridPos": {
-            "h": 9,
+            "h": 6,
             "w": 8,
             "x": 16,
-            "y": 9
+            "y": 6
           },
           "id": 6,
           "options": {
@@ -661,7 +661,7 @@ spec:
             "h": 3,
             "w": 4,
             "x": 0,
-            "y": 12
+            "y": 9
           },
           "id": 10,
           "options": {
@@ -733,7 +733,7 @@ spec:
             "h": 3,
             "w": 4,
             "x": 4,
-            "y": 12
+            "y": 9
           },
           "id": 8,
           "options": {
@@ -774,8 +774,43 @@ spec:
           "fieldConfig": {
             "defaults": {
               "color": {
-                "mode": "thresholds"
+                "mode": "palette-classic"
               },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 1,
+                "drawStyle": "bars",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "showValues": false,
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "decimals": 0,
               "mappings": [],
               "thresholds": {
                 "mode": "absolute",
@@ -783,83 +818,6 @@ spec:
                   {
                     "color": "green",
                     "value": 0
-                  }
-                ]
-              },
-              "unit": "reqps"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 3,
-            "w": 4,
-            "x": 0,
-            "y": 15
-          },
-          "id": 11,
-          "options": {
-            "displayMode": "lcd",
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": false
-            },
-            "maxVizHeight": 300,
-            "minVizHeight": 16,
-            "minVizWidth": 8,
-            "namePlacement": "auto",
-            "orientation": "horizontal",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
-            },
-            "showUnfilled": true,
-            "sizing": "auto",
-            "valueMode": "color"
-          },
-          "pluginVersion": "12.3.1",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "PBFA97CFB590B2093"
-              },
-              "editorMode": "code",
-              "expr": "sum (rate(http_requests_total{namespace=~\"^$namespace$\", handler=\"login\",code!=\"303\"}[$__rate_interval])) by (code)",
-              "legendFormat": "__auto",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "Invalid login attempts",
-          "type": "bargauge"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "mappings": [],
-              "min": 0,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": 0
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
                   }
                 ]
               },
@@ -868,28 +826,24 @@ spec:
             "overrides": []
           },
           "gridPos": {
-            "h": 3,
-            "w": 4,
-            "x": 4,
-            "y": 15
+            "h": 4,
+            "w": 8,
+            "x": 0,
+            "y": 12
           },
-          "id": 3,
+          "id": 14,
           "options": {
-            "colorMode": "value",
-            "graphMode": "area",
-            "justifyMode": "auto",
-            "orientation": "auto",
-            "percentChangeColorMode": "standard",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
             },
-            "showPercentChange": false,
-            "textMode": "auto",
-            "wideLayout": true
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
           },
           "pluginVersion": "12.3.1",
           "targets": [
@@ -899,14 +853,14 @@ spec:
                 "uid": "PBFA97CFB590B2093"
               },
               "editorMode": "code",
-              "expr": "sum (increase(http_requests_total{namespace=~\"^$namespace$\", handler=\"login\",code=\"303\"}[$__rate_interval]))",
+              "expr": "sum by(code) (increase(http_requests_total{app_kubernetes_io_name=\"forward-auth\", handler=\"login\", namespace=~\"$namespace\"}[15m]))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "Logins",
-          "type": "stat"
+          "title": "logins",
+          "type": "timeseries"
         }
       ],
       "preload": false,
@@ -965,7 +919,7 @@ spec:
       "timezone": "browser",
       "title": "forward-auth",
       "uid": "chf2v8c",
-      "version": 15,
+      "version": 16,
       "weekStart": ""
     }
   resyncPeriod: 10m0s
