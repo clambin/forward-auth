@@ -89,8 +89,8 @@ spec:
           "pluginVersion": "12.3.1",
           "targets": [
             {
-              "editorMode": "builder",
-              "expr": "sum by(code) (http_requests_total{app_kubernetes_io_name=\"forward-auth\", handler=\"forwardauth\", namespace=~\"$namespace\"})",
+              "editorMode": "code",
+              "expr": "sum by (code) (increase(http_requests_total{app_kubernetes_io_name=\"forward-auth\", handler=\"forwardauth\", namespace=~\"$namespace\"}[$__range]))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -965,7 +965,7 @@ spec:
       "timezone": "browser",
       "title": "forward-auth",
       "uid": "chf2v8c",
-      "version": 14,
+      "version": 15,
       "weekStart": ""
     }
   resyncPeriod: 10m0s
