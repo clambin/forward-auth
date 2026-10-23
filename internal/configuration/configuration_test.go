@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"codeberg.org/clambin/go-common/validate"
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/goccy/go-yaml"
 	"github.com/sethvargo/go-envconfig/v2"
@@ -83,11 +84,11 @@ func TestConfiguration_Unmarshal(t *testing.T) {
 
 func TestConfiguration_IsValid(t *testing.T) {
 	// blank configuration is invalid
-	require.Error(t, Configuration{}.IsValid())
+	require.Error(t, validate.Validate(Configuration{}))
 
 	// default configuration is invalid
 	cfg := Default()
-	require.Error(t, cfg.IsValid())
+	require.Error(t, validate.Validate(cfg))
 
 	// fill in all mandatory fields
 	cfg.Server.Key = strings.Repeat("a", 32)
@@ -96,24 +97,24 @@ func TestConfiguration_IsValid(t *testing.T) {
 	cfg.Authn.Provider.OIDC.IssuerURL = "https://example.com"
 	cfg.Authn.Provider.OIDC.ClientID = "my-client-id"
 	cfg.Authn.Provider.OIDC.ClientSecret = "my-client-secret"
-	require.NoError(t, cfg.IsValid())
+	require.NoError(t, validate.Validate(cfg))
 
 	// change provider type to github and validate mandatory fields
 	cfg.Authn.Provider.Type = "github"
-	require.Error(t, cfg.IsValid())
+	require.Error(t, validate.Validate(cfg))
 	cfg.Authn.Provider.GitHub.ClientID = "my-client-id"
 	cfg.Authn.Provider.GitHub.ClientSecret = "my-client-secret"
-	require.NoError(t, cfg.IsValid())
+	require.NoError(t, validate.Validate(cfg))
 
 	// change storage type to redis and validate mandatory fields
 	cfg.Storage.Type = "redis"
-	require.Error(t, cfg.IsValid())
+	require.Error(t, validate.Validate(cfg))
 	cfg.Storage.Redis.Addr = "127.0.0.1:6379"
-	require.NoError(t, cfg.IsValid())
+	require.NoError(t, validate.Validate(cfg))
 
 	// key that is too short is rejected
 	cfg.Server.Key = "too-short"
-	err := cfg.IsValid()
+	err := validate.Validate(cfg)
 	require.Error(t, err)
 	assert.Equal(t, "server: key: must be at least 32 characters long", err.Error())
 }
@@ -124,10 +125,11 @@ func TestProviderConfiguration_IsValid(t *testing.T) {
 		cfg     ProviderConfiguration
 		wantErr require.ErrorAssertionFunc
 	}{
-		{"blank", ProviderConfiguration{}, require.Error},
 		{"invalid type", ProviderConfiguration{Type: "invalid"}, require.Error},
 		{"valid oidc", ProviderConfiguration{Type: "oidc", RedirectURL: "https://example.com", OIDC: OIDCProviderConfiguration{"https://example.xom", "ClientID", "ClientSecret", []string{}}}, require.NoError},
 		{"valid github", ProviderConfiguration{Type: "github", RedirectURL: "https://example.com", GitHub: GitHubProviderConfiguration{"ClientID", "ClientSecret", []string{}}}, require.NoError},
+		{"blank", ProviderConfiguration{}, require.Error},
+		{"invalid redirect url", ProviderConfiguration{Type: "oidc", RedirectURL: "", OIDC: OIDCProviderConfiguration{"https://example.xom", "ClientID", "ClientSecret", []string{}}}, require.Error},
 	}
 
 	for _, tt := range tests {
@@ -152,7 +154,7 @@ func TestOIDCConfiguration_IsValid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.cfg.IsValid()
+			err := tt.cfg.isValid()
 			tt.wantErr(t, err)
 		})
 	}
@@ -171,7 +173,7 @@ func TestGitHubConfiguration_IsValid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.cfg.IsValid()
+			err := tt.cfg.isValid()
 			tt.wantErr(t, err)
 		})
 	}

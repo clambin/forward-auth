@@ -5,6 +5,7 @@ go 1.27
 require (
 	codeberg.org/clambin/go-common/cache v0.10.0
 	codeberg.org/clambin/go-common/httputils v0.5.1
+	codeberg.org/clambin/go-common/validate v0.1.1
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/goccy/go-yaml v1.19.2
 	github.com/golang-jwt/jwt/v5 v5.3.1

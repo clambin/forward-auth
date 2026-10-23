@@ -3,7 +3,7 @@ on:
   push:
     branches-ignore:
       - main
-      - validate
+      - config
   workflow_call:
     secrets:
       codecov-token:
