@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"codeberg.org/clambin/go-common/httputils"
+	"codeberg.org/clambin/go-common/validate"
 	"github.com/clambin/forward-auth/internal/authz"
-	"github.com/clambin/forward-auth/internal/configuration/validate"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -66,10 +66,6 @@ type Configuration struct {
 	Session    SessionConfiguration    `yaml:"session" env:", prefix=SESSION_"`
 }
 
-func (c Configuration) IsValid() error {
-	return validate.IsValid(c)
-}
-
 type ServerConfiguration struct {
 	CookieName string `yaml:"cookieName"`
 	Key        string `yaml:"key" env:"KEY"`
@@ -82,11 +78,11 @@ type ServerConfiguration struct {
 func (c ServerConfiguration) IsValid() error {
 	return errors.Join(
 		validate.PrefixError("cookieName", validate.IsNotZero(c.CookieName)),
-		validate.PrefixError("key", validate.IsMinLength(c.Key, 32)),
+		validate.PrefixError("key", isMinLength(c.Key, 32)),
 		validate.PrefixError("domain", validate.IsNotZero(c.Domain)),
-		validate.PrefixError("healthPath", validate.IsAbsolutePath(c.HealthPath)),
-		validate.PrefixError("addrInt", validate.IsTCPListener(c.AddrInt)),
-		validate.PrefixError("addrExt", validate.IsTCPListener(c.AddrExt)),
+		validate.PrefixError("healthPath", isAbsolutePath(c.HealthPath)),
+		validate.PrefixError("addrInt", validate.IsNetListenerAddr(c.AddrInt)),
+		validate.PrefixError("addrExt", validate.IsNetListenerAddr(c.AddrExt)),
 	)
 }
 
@@ -131,8 +127,8 @@ type PrometheusConfiguration struct {
 
 func (c PrometheusConfiguration) IsValid() error {
 	return errors.Join(
-		validate.PrefixError("addr", validate.IsTCPListener(c.Addr)),
-		validate.PrefixError("path", validate.IsAbsolutePath(c.Path)),
+		validate.PrefixError("addr", validate.IsNetListenerAddr(c.Addr)),
+		validate.PrefixError("path", isAbsolutePath(c.Path)),
 	)
 }
 
@@ -181,7 +177,7 @@ type StorageConfiguration struct {
 func (c StorageConfiguration) IsValid() error {
 	errs := validate.PrefixError("type", validate.IsEnum(c.Type, "redis", "local", ""))
 	if strings.EqualFold(c.Type, "redis") {
-		errs = errors.Join(errs, c.Redis.IsValid())
+		errs = errors.Join(errs, c.Redis.isValid())
 	}
 	return errs
 }
@@ -193,8 +189,8 @@ type StorageRedisConfiguration struct {
 	DB       int    `yaml:"db"`
 }
 
-func (c StorageRedisConfiguration) IsValid() error {
-	return validate.PrefixError("addr", errors.Join(validate.IsTCPTarget(c.Addr)))
+func (c StorageRedisConfiguration) isValid() error {
+	return validate.PrefixError("addr", errors.Join(validate.IsNetTargetAddr(c.Addr)))
 }
 
 type ProviderConfiguration struct {
@@ -207,13 +203,13 @@ type ProviderConfiguration struct {
 func (c ProviderConfiguration) IsValid() error {
 	errs := errors.Join(
 		validate.PrefixError("type", validate.IsEnum(c.Type, "oidc", "github")),
-		validate.PrefixError("redirect_url", validate.IsNotZero(c.RedirectURL)),
+		validate.PrefixError("redirect_url", validate.IsURL(c.RedirectURL)),
 	)
 	switch strings.ToLower(c.Type) {
 	case "oidc":
-		errs = errors.Join(errs, validate.PrefixError("oidc", c.OIDC.IsValid()))
+		errs = errors.Join(errs, validate.PrefixError("oidc", c.OIDC.isValid()))
 	case "github":
-		errs = errors.Join(errs, validate.PrefixError("github", c.GitHub.IsValid()))
+		errs = errors.Join(errs, validate.PrefixError("github", c.GitHub.isValid()))
 	}
 	return errs
 }
@@ -225,7 +221,7 @@ type OIDCProviderConfiguration struct {
 	Scopes       []string `yaml:"scopes"`
 }
 
-func (c OIDCProviderConfiguration) IsValid() error {
+func (c OIDCProviderConfiguration) isValid() error {
 	return errors.Join(
 		validate.PrefixError("issuer_url", validate.IsNotZero(c.IssuerURL)),
 		validate.PrefixError("client_id", validate.IsNotZero(c.ClientID)),
@@ -239,7 +235,7 @@ type GitHubProviderConfiguration struct {
 	Scopes       []string `yaml:"scopes"`
 }
 
-func (c GitHubProviderConfiguration) IsValid() error {
+func (c GitHubProviderConfiguration) isValid() error {
 	return errors.Join(
 		validate.PrefixError("client_id", validate.IsNotZero(c.ClientID)),
 		validate.PrefixError("client_secret", validate.IsNotZero(c.ClientSecret)),

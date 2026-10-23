@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"codeberg.org/clambin/go-common/httputils"
+	"codeberg.org/clambin/go-common/validate"
 	"github.com/clambin/forward-auth/internal/authn"
 	"github.com/clambin/forward-auth/internal/authz"
 	"github.com/clambin/forward-auth/internal/configuration"
@@ -39,7 +40,7 @@ func main() {
 	if err != nil {
 		panic(fmt.Errorf("failed to read configuration: %w", err))
 	}
-	if err = cfg.IsValid(); err != nil {
+	if err = validate.Validate(cfg); err != nil {
 		panic(fmt.Errorf("invalid configuration: %w", err))
 	}
 
