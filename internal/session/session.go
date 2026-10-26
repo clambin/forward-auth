@@ -88,7 +88,7 @@ func New(
 }
 
 // CreateSession creates a new session and returns a JWT token to be sent back to the client.
-func (m Sessions) CreateSession(ctx context.Context, identity provider.Identity, r *http.Request) (Token, error) {
+func (s Sessions) CreateSession(ctx context.Context, identity provider.Identity, r *http.Request) (Token, error) {
 	// allocate a session ID
 	sessionID := uuid.New().String()
 	// create the session token that will be sent back to the client
@@ -108,7 +108,7 @@ func (m Sessions) CreateSession(ctx context.Context, identity provider.Identity,
 		IssuedAt:         now,
 		UserAgent:        userAgent,
 	}
-	if err := m.put(ctx, token.Identity.Email, sessionID, session); err != nil {
+	if err := s.put(ctx, token.Identity.Email, sessionID, session); err != nil {
 		return token, err
 	}
 	return token, nil
@@ -116,9 +116,9 @@ func (m Sessions) CreateSession(ctx context.Context, identity provider.Identity,
 
 // Validate validates that the session in the token exists in the store.  If required, it refreshes the token
 // by rotating the refresh token. It returns the updated token.
-func (m Sessions) Validate(ctx context.Context, token Token, r *http.Request) (Token, error) {
+func (s Sessions) Validate(ctx context.Context, token Token, r *http.Request) (Token, error) {
 	// if the session doesn't exist, it's an error
-	session, err := m.get(ctx, token.Identity.Email, token.SessionID)
+	session, err := s.get(ctx, token.Identity.Email, token.SessionID)
 	if err != nil {
 		return token, err
 	}
@@ -132,7 +132,7 @@ func (m Sessions) Validate(ctx context.Context, token Token, r *http.Request) (T
 	// create a new token, rotating the refresh token.
 	// rotateRefreshToken fails if the token's refresh token no longer matches the current or previous refresh token.
 
-	token, session, err = m.rotateRefreshToken(token, session)
+	token, session, err = s.rotateRefreshToken(token, session)
 	if err != nil {
 		return token, fmt.Errorf("failed to rotate refresh token: %w", err)
 	}
@@ -144,7 +144,7 @@ func (m Sessions) Validate(ctx context.Context, token Token, r *http.Request) (T
 	if r != nil {
 		session.UserAgent = r.Header.Get("User-Agent")
 	}
-	return token, m.update(ctx, token.Identity.Email, token.SessionID, session)
+	return token, s.update(ctx, token.Identity.Email, token.SessionID, session)
 }
 
 // rotateRefreshToken rotates the refresh token for a session. It returns the new token, session, and any error that occurred.
@@ -156,7 +156,7 @@ func (m Sessions) Validate(ctx context.Context, token Token, r *http.Request) (T
 //
 // Note that rotateRefreshToken does not update the session in the store. The caller does this
 // so it can be done atomically with the token update.
-func (m Sessions) rotateRefreshToken(token Token, session Session) (Token, Session, error) {
+func (s Sessions) rotateRefreshToken(token Token, session Session) (Token, Session, error) {
 	// we'll need to issue a new token. update the ID
 	token.ID = uuid.New().String()
 
@@ -184,12 +184,12 @@ func (m Sessions) rotateRefreshToken(token Token, session Session) (Token, Sessi
 	return token, session, nil
 }
 
-func (m Sessions) DeleteSession(ctx context.Context, email string, sessionID string) error {
-	return m.del(ctx, email, sessionID)
+func (s Sessions) DeleteSession(ctx context.Context, email string, sessionID string) error {
+	return s.del(ctx, email, sessionID)
 }
 
 // LoginHandler returns an http.Handler that handles the login request and creates a new session
-func (m Sessions) LoginHandler(logger *slog.Logger) http.Handler {
+func (s Sessions) LoginHandler(logger *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// use state & code to validate the login and retrieve the user info
 		state := r.URL.Query().Get("state")
@@ -202,7 +202,7 @@ func (m Sessions) LoginHandler(logger *slog.Logger) http.Handler {
 
 		logger.Debug("received valid login request")
 
-		userInfo, redirectURL, err := m.authenticator.ConfirmLogin(r.Context(), state, code)
+		userInfo, redirectURL, err := s.authenticator.ConfirmLogin(r.Context(), state, code)
 		if err != nil {
 			logger.Warn("rejecting login request: failed to validate login", slog.Any("err", err))
 			http.Error(w, "failed to validate login", http.StatusUnauthorized)
@@ -210,10 +210,10 @@ func (m Sessions) LoginHandler(logger *slog.Logger) http.Handler {
 		}
 
 		ulog := logger.With(slog.String("user", userInfo.Email))
-		ulog.Debug("user validated successfully")
+		ulog.Debug("user validated successfully", "redirectURL", redirectURL)
 
 		// create a new session & token for the new session
-		tok, err := m.CreateSession(r.Context(), userInfo, r)
+		tok, err := s.CreateSession(r.Context(), userInfo, r)
 		if err != nil {
 			ulog.Error("failed to create token", slog.Any("err", err))
 			http.Error(w, "failed to create session", http.StatusInternalServerError)
@@ -221,14 +221,14 @@ func (m Sessions) LoginHandler(logger *slog.Logger) http.Handler {
 		}
 		ulog.Debug("session created", slog.String("session_id", tok.SessionID))
 
-		signedToken, err := tok.Sign([]byte(m.cfg.Key))
+		signedToken, err := tok.Sign([]byte(s.cfg.Key))
 		if err != nil {
 			ulog.Error("failed to sign token", slog.Any("err", err))
 			http.Error(w, "failed to create session", http.StatusInternalServerError)
 			return
 		}
 
-		setTokenCookie(w, m.cfg.CookieName, signedToken, m.cfg.Domain)
+		setTokenCookie(w, s.cfg.CookieName, signedToken, s.cfg.Domain)
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 		ulog.Info("login successful")
 	})
@@ -239,29 +239,53 @@ type identityKey struct{}
 // Authenticator returns a middleware that validates the session cookie. If valid, it adds the identity
 // to the request context and calls the next handler.
 // If the token is invalid, redirectOnError determines whether to redirect to the login page or return an authentication error.
-func (m Sessions) Authenticator(redirectOnError bool) func(http.Handler) http.Handler {
+func (s Sessions) Authenticator(redirectOnError bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			identity, err := m.authenticateRequest(w, r)
+			identity, signedToken, err := s.authenticateRequest(r)
 			if err == nil {
+				if signedToken != "" {
+					// token was updated, set the cookie to inform the browser
+					setTokenCookie(w, s.cfg.CookieName, signedToken, s.cfg.Domain)
+				}
 				next.ServeHTTP(w, SetAuthenticatedUser(r, identity))
 				return
 			}
-			m.logger.Warn("failed to authenticate request",
+
+			s.logger.Warn("failed to authenticate request",
 				slog.Any("err", err),
 				slog.String("url", r.URL.String()),
+				slog.String("method", r.Method),
 			)
-			if !redirectOnError {
+
+			// determine if we should redirect the user to the login page
+			reqRedirectOnError := redirectOnError
+			if reqRedirectOnError && !shouldRedirect(r) {
+				reqRedirectOnError = false
+				s.logger.Debug("unauthenticated request is not a navigation request. not redirecting",
+					slog.String("url", r.URL.String()),
+					slog.String("method", r.Method),
+					//slog.Any("headers", r.Header),
+					slog.String("Sec-Fetch-Mode", r.Header.Get("Sec-Fetch-Mode")),
+					slog.String("Sec-Fetch-Dest", r.Header.Get("Sec-Fetch-Dest")),
+				)
+			}
+
+			// no redirect
+			if !reqRedirectOnError {
 				http.Error(w, "failed to authenticate request", http.StatusUnauthorized)
 				return
 			}
-			redirectURL, err := m.authenticator.InitiateLogin(r.Context(), r.URL.String())
+
+			// redirect
+			s.logger.Debug("redirecting to login page")
+
+			redirectURL, err := s.authenticator.InitiateLogin(r.Context(), r.URL.String())
 			if err != nil {
-				m.logger.Error("failed to initiate login", slog.Any("err", err))
+				s.logger.Error("failed to initiate login", slog.Any("err", err))
 				http.Error(w, "failed to initiate login", http.StatusInternalServerError)
 				return
 			}
-			m.logger.Debug("redirecting to login page")
 			http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 		})
 	}
@@ -278,45 +302,41 @@ func SetAuthenticatedUser(r *http.Request, identity provider.Identity) *http.Req
 	return r.WithContext(context.WithValue(r.Context(), identityKey{}, identity))
 }
 
-func (m Sessions) authenticateRequest(
-	w http.ResponseWriter,
-	r *http.Request,
-) (provider.Identity, error) {
+func (s Sessions) authenticateRequest(r *http.Request) (provider.Identity, string, error) {
 	// get the jwt token
 	var token Token
-	cookie, err := r.Cookie(m.cfg.CookieName)
+	cookie, err := r.Cookie(s.cfg.CookieName)
 	if err == nil {
 		// parse the token
-		token, err = ParseToken(cookie.Value, []byte(m.cfg.Key))
+		token, err = ParseToken(cookie.Value, []byte(s.cfg.Key))
 	}
 	if err != nil {
-		return provider.Identity{}, err
+		return provider.Identity{}, "", err
 	}
 
 	// validate the token
-	newToken, err := m.Validate(r.Context(), token, r)
+	newToken, err := s.Validate(r.Context(), token, r)
 	switch {
 	case errors.Is(err, ErrPreviousRefreshTokenExpired),
 		errors.Is(err, ErrInvalidRefreshToken),
 		errors.Is(err, ErrSessionNotFound):
 		// we're rejecting the token and asking the user to log in again. delete the old session.
-		if deleteErr := m.DeleteSession(r.Context(), token.Identity.Email, token.SessionID); deleteErr != nil && !errors.Is(deleteErr, ErrSessionNotFound) {
-			m.logger.Warn("failed to delete old session", slog.Any("err", deleteErr))
+		if deleteErr := s.DeleteSession(r.Context(), token.Identity.Email, token.SessionID); deleteErr != nil && !errors.Is(deleteErr, ErrSessionNotFound) {
+			s.logger.Warn("failed to delete old session", slog.Any("err", deleteErr))
 		}
-		return provider.Identity{}, err
+		return provider.Identity{}, "", err
 	case err != nil:
-		return provider.Identity{}, err
+		return provider.Identity{}, "", err
 	}
 	// if the token was updated, sign the new token
+	var signedToken string
 	if newToken.ID != token.ID {
-		m.logger.Debug("token updated")
+		s.logger.Debug("token refreshed successfully")
 		// we know the token can be signed because we created it in handleLogin()
-		signedToken, _ := newToken.Sign([]byte(m.cfg.Key))
-		// TODO: code smell: this is a side effect. move to the middleware?
-		setTokenCookie(w, m.cfg.CookieName, signedToken, m.cfg.Domain)
+		signedToken, _ = newToken.Sign([]byte(s.cfg.Key))
 	}
 
-	return newToken.Identity, nil
+	return newToken.Identity, signedToken, nil
 }
 
 // setTokenCookie adds a signed token cookie on the response.
@@ -332,4 +352,24 @@ func setTokenCookie(w http.ResponseWriter, cookieName, signedToken, domain strin
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// shouldRedirect determines if the request should be redirected.
+// In practice, it's useless to redirect requests like API requests, as they won't be followed anyway.
+// We redirect if:
+// - We have Fetch metadata, and it's a document request, or
+// - We don't have Fetch metadata, and it's a GET.
+func shouldRedirect(r *http.Request) bool {
+	mode := r.Header.Get("Sec-Fetch-Mode")
+	dest := r.Header.Get("Sec-Fetch-Dest")
+
+	// if Fetch metadata is available, don't redirect non-document requests.
+	if mode != "" || dest != "" {
+		return mode == "navigate" && dest == "document"
+	}
+
+	// headers not available
+	// redirect only on a GET.
+	// not foolproof, but the best we can do.
+	return r.Method == http.MethodGet
 }
