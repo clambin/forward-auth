@@ -2,6 +2,7 @@ package session
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -138,6 +139,7 @@ func TestSessions(t *testing.T) {
 	}
 }
 
+// TestSessions_InvalidStorage verifies that the session store returns an error when the storage type is invalid.
 func TestSessions_InvalidStorage(t *testing.T) {
 	_, err := New(
 		time.Hour,
@@ -262,6 +264,8 @@ func TestSessions_Authenticator(t *testing.T) {
 		name     string
 		token    generateTokenFunc
 		redirect bool
+		method   string
+		header   http.Header
 		want     int
 	}{
 		{
@@ -270,59 +274,36 @@ func TestSessions_Authenticator(t *testing.T) {
 			want:  http.StatusOK,
 		},
 		{
-			name:  "valid expired jwt",
+			name: "missing token, no redirect",
+			want: http.StatusUnauthorized,
+		},
+		{
+			name:  "expired JWT with valid session",
 			token: generateTestToken([]byte(validKey), -time.Hour),
 			want:  http.StatusOK,
 		},
 		{
-			name:     "invalid signature on jwt",
-			token:    generateTestToken([]byte("wrong-key"), 0),
+			name:     "unauthenticated, navigation",
 			redirect: true,
+			header:   http.Header{"Sec-Fetch-Mode": {"navigate"}, "Sec-Fetch-Dest": {"document"}},
 			want:     http.StatusSeeOther,
 		},
 		{
-			name:     "missing token, redirect",
+			name:     "unauthenticated, api",
 			redirect: true,
-			want:     http.StatusSeeOther,
-		},
-		{
-			name:     "missing token, auth error",
-			redirect: false,
+			header:   http.Header{"Sec-Fetch-Mode": {"cors"}, "Sec-Fetch-Dest": {"empty"}},
 			want:     http.StatusUnauthorized,
 		},
 		{
-			name: "invalid cookie",
-			token: func(tb testing.TB, h Sessions, req *http.Request) string {
-				return "invalid"
-			},
+			name:     "unauthenticated GET, no Sec-Fetch headers",
 			redirect: true,
 			want:     http.StatusSeeOther,
 		},
 		{
-			name: "no session",
-			token: func(tb testing.TB, h Sessions, req *http.Request) string {
-				tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, req)
-				require.NoError(tb, err)
-				rawToken, err := tok.Sign([]byte(validKey))
-				require.NoError(tb, err)
-				require.NoError(tb, h.DeleteSession(t.Context(), tok.Identity.Email, tok.SessionID))
-				return rawToken
-			},
+			name:     "unauthenticated POST, no Sec-Fetch headers",
 			redirect: true,
-			want:     http.StatusSeeOther,
-		},
-		{
-			name: "unrecognized refresh token",
-			token: func(tb testing.TB, h Sessions, req *http.Request) string {
-				tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, req)
-				require.NoError(tb, err)
-				tok.RefreshToken = RefreshToken{}
-				rawToken, err := tok.Sign([]byte(validKey))
-				require.NoError(tb, err)
-				return rawToken
-			},
-			redirect: true,
-			want:     http.StatusSeeOther,
+			method:   http.MethodPost,
+			want:     http.StatusUnauthorized,
 		},
 	}
 
@@ -349,9 +330,14 @@ func TestSessions_Authenticator(t *testing.T) {
 				require.Equal(t, "foo@example.com", id.Email)
 			}))
 
-			req, _ := http.NewRequest(http.MethodGet, "/", nil)
+			req, _ := http.NewRequest(cmp.Or(tt.method, http.MethodGet), "/", nil)
 			if tt.token != nil {
 				req.AddCookie(&http.Cookie{Name: cfg.CookieName, Value: tt.token(t, h, req)})
+			}
+			for k, vs := range tt.header {
+				for _, v := range vs {
+					req.Header.Add(k, v)
+				}
 			}
 			resp := httptest.NewRecorder()
 			s.ServeHTTP(resp, req)
@@ -393,6 +379,82 @@ func BenchmarkSessions_Authenticator(b *testing.B) {
 		if resp.Code != http.StatusOK {
 			b.Fatal("should be OK")
 		}
+	}
+}
+
+func TestSessions_authenticateRequest(t *testing.T) {
+	const (
+		validKey   = "secret"
+		cookieName = "my-cookie"
+	)
+	tests := []struct {
+		name      string
+		token     generateTokenFunc
+		err       require.ErrorAssertionFunc
+		wantToken bool
+	}{
+		{"no cookie", nil, require.Error, false},
+		{"valid session", generateTestToken([]byte(validKey), 0), require.NoError, false},
+		{"expired JWT with valid session", generateTestToken([]byte(validKey), -time.Hour), require.NoError, true},
+		{"invalid signature on JWT", generateTestToken([]byte("invalid-key"), 0), require.Error, false},
+		{"invalid cookie", func(testing.TB, Sessions, *http.Request) string { return "invalid" }, require.Error, false},
+		{
+			name: "no session",
+			token: func(tb testing.TB, h Sessions, req *http.Request) string {
+				tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, req)
+				require.NoError(tb, err)
+				rawToken, err := tok.Sign([]byte(validKey))
+				require.NoError(tb, err)
+				require.NoError(tb, h.DeleteSession(t.Context(), tok.Identity.Email, tok.SessionID))
+				return rawToken
+			},
+			err:       require.Error,
+			wantToken: false,
+		},
+		{
+			name: "unrecognized refresh token",
+			token: func(tb testing.TB, h Sessions, req *http.Request) string {
+				tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, req)
+				require.NoError(tb, err)
+				tok.RefreshToken = RefreshToken{}
+				rawToken, err := tok.Sign([]byte(validKey))
+				require.NoError(tb, err)
+				return rawToken
+			},
+			err:       require.Error,
+			wantToken: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := configuration.ServerConfiguration{
+				CookieName: cookieName,
+				Key:        validKey,
+				Domain:     ".example.com",
+			}
+			s, _ := New(
+				time.Hour,
+				cfg,
+				configuration.StorageConfiguration{},
+				&fakeAuthenticator{},
+				slog.New(slog.DiscardHandler),
+			)
+
+			req, _ := http.NewRequest(http.MethodGet, "/", nil)
+			if tt.token != nil {
+				token := tt.token(t, s, req)
+				req.AddCookie(&http.Cookie{Name: cookieName, Value: token})
+			}
+			identity, updatedToken, err := s.authenticateRequest(req)
+			tt.err(t, err)
+			if err == nil {
+				assert.Equal(t, "foo@example.com", identity.Email)
+			}
+			if tt.wantToken {
+				assert.NotEmpty(t, updatedToken)
+			}
+		})
 	}
 }
 
