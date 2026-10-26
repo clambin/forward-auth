@@ -210,7 +210,7 @@ func (m Sessions) LoginHandler(logger *slog.Logger) http.Handler {
 		}
 
 		ulog := logger.With(slog.String("user", userInfo.Email))
-		ulog.Debug("user validated successfully")
+		ulog.Debug("user validated successfully", "redirectURL", redirectURL)
 
 		// create a new session & token for the new session
 		tok, err := m.CreateSession(r.Context(), userInfo, r)
@@ -247,22 +247,42 @@ func (m Sessions) Authenticator(redirectOnError bool) func(http.Handler) http.Ha
 				next.ServeHTTP(w, SetAuthenticatedUser(r, identity))
 				return
 			}
+
 			m.logger.Warn("failed to authenticate request",
 				slog.Any("err", err),
 				slog.String("url", r.URL.String()),
+				slog.String("method", r.Method),
 			)
-			if !redirectOnError {
+
+			reqRedirectOnError := redirectOnError
+			if reqRedirectOnError && !shouldRedirect(r) {
+				reqRedirectOnError = false
+				m.logger.Debug("unauthenticated request is not a navigation request. not redirecting",
+					slog.String("url", r.URL.String()),
+					slog.String("method", r.Method),
+					//slog.Any("headers", r.Header),
+					slog.String("Sec-Fetch-Mode", r.Header.Get("Sec-Fetch-Mode")),
+					slog.String("Sec-Fetch-Dest", r.Header.Get("Sec-Fetch-Dest")),
+				)
+			}
+
+			if !reqRedirectOnError {
 				http.Error(w, "failed to authenticate request", http.StatusUnauthorized)
 				return
 			}
+
+			m.logger.Debug("redirecting to login page")
+
 			redirectURL, err := m.authenticator.InitiateLogin(r.Context(), r.URL.String())
 			if err != nil {
 				m.logger.Error("failed to initiate login", slog.Any("err", err))
 				http.Error(w, "failed to initiate login", http.StatusInternalServerError)
 				return
 			}
-			m.logger.Debug("redirecting to login page")
 			http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+
+			m.logger.Debug("redirected to login page")
+
 		})
 	}
 }
@@ -332,4 +352,24 @@ func setTokenCookie(w http.ResponseWriter, cookieName, signedToken, domain strin
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// shouldRedirect determines if the request should be redirected.
+// In practice, it's useless to redirect requests like API requests, as they won't be followed anyway.
+// We redirect if:
+// - We have Fetch metadata, and it's a document request, or
+// - We don't have Fetch metadata, and it's a GET.
+func shouldRedirect(r *http.Request) bool {
+	mode := r.Header.Get("Sec-Fetch-Mode")
+	dest := r.Header.Get("Sec-Fetch-Dest")
+
+	// if Fetch metadata is available, don't redirect non-document requests.
+	if mode != "" || dest != "" {
+		return mode == "navigate" && dest == "document"
+	}
+
+	// headers not available
+	// redirect only on a GET.
+	// not foolproof, but the best we can do.
+	return r.Method == http.MethodGet
 }

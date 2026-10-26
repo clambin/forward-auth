@@ -455,3 +455,38 @@ func generateTestToken(key []byte, delta time.Duration) func(tb testing.TB, h Se
 		return rawToken
 	}
 }
+
+func Test_shouldRedirect(t *testing.T) {
+	type args struct {
+		method string
+		mode   string
+		dest   string
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{"navigate", args{http.MethodGet, "navigate", "document"}, true},
+		{"non-GET navigate", args{http.MethodPost, "navigate", "document"}, true},
+		{"API call", args{http.MethodPost, "cors", "empty"}, false},
+		{"API call", args{http.MethodGet, "cors", "empty"}, false},
+		{"websocket", args{http.MethodGet, "websocket", "empty"}, false},
+		{"partial fetch data", args{http.MethodGet, "navigate", "empty"}, false},
+		{"no headers GET", args{http.MethodGet, "", ""}, true},
+		{"no headers non-GET", args{http.MethodPost, "", ""}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, _ := http.NewRequest(tt.args.method, "/", nil)
+			if tt.args.mode != "" {
+				req.Header.Set("Sec-Fetch-Mode", tt.args.mode)
+			}
+			if tt.args.dest != "" {
+				req.Header.Set("Sec-Fetch-Dest", tt.args.dest)
+			}
+
+			assert.Equal(t, tt.want, shouldRedirect(req))
+		})
+	}
+}
