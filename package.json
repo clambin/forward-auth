@@ -8,7 +8,7 @@
   },
   "private": true,
   "devDependencies": {
-    "happy-dom": "^20.8.9",
+    "happy-dom": "^21.0.4",
     "vitest": "^4.1.12"
   }
 }
