@@ -261,12 +261,13 @@ func TestSessions_Authenticator(t *testing.T) {
 	const validKey = "valid-key"
 
 	tests := []struct {
-		name     string
-		token    generateTokenFunc
-		redirect bool
-		method   string
-		header   http.Header
-		want     int
+		name       string
+		token      generateTokenFunc
+		redirect   bool
+		method     string
+		header     http.Header
+		want       int
+		wantCookie bool
 	}{
 		{
 			name:  "valid session, allowed",
@@ -278,9 +279,10 @@ func TestSessions_Authenticator(t *testing.T) {
 			want: http.StatusUnauthorized,
 		},
 		{
-			name:  "expired JWT with valid session",
-			token: generateTestToken([]byte(validKey), -time.Hour),
-			want:  http.StatusOK,
+			name:       "expired JWT with valid session",
+			token:      generateTestToken([]byte(validKey), -time.Hour),
+			want:       http.StatusOK,
+			wantCookie: true,
 		},
 		{
 			name:     "unauthenticated, navigation",
@@ -342,6 +344,13 @@ func TestSessions_Authenticator(t *testing.T) {
 			resp := httptest.NewRecorder()
 			s.ServeHTTP(resp, req)
 			assert.Equal(t, tt.want, resp.Code)
+
+			if tt.wantCookie {
+				cookies := resp.Result().Cookies()
+				require.Len(t, cookies, 1)
+				assert.Equal(t, cfg.CookieName, cookies[0].Name)
+				assert.NotEmpty(t, cookies[0].Value)
+			}
 
 			if resp.Code == http.StatusSeeOther {
 				assert.Contains(t, resp.Header().Get("Location"), "https://oicd.example.com/_oauth?code=")
