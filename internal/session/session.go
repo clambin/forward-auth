@@ -256,7 +256,7 @@ func (s Sessions) Authenticator(redirectOnError bool) func(http.Handler) http.Ha
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// make sure the browser has a client ID by the time it logs in
-			_ = s.clientID(w, r)
+			//_ = s.clientID(w, r)
 			identity, signedToken, err := s.authenticateRequest(r)
 			if err == nil {
 				if signedToken != "" {

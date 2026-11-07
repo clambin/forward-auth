@@ -333,7 +333,9 @@ func TestSessions_Authenticator(t *testing.T) {
 
 			req, _ := http.NewRequest(cmp.Or(tt.method, http.MethodGet), "/", nil)
 			if tt.token != nil {
-				req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: tt.token(t, h, req)})
+				clientID, token := tt.token(t, h, req)
+				req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+				req.AddCookie(&http.Cookie{Name: clientIDCookieName, Value: clientID})
 			}
 			for k, vs := range tt.header {
 				for _, v := range vs {
@@ -345,8 +347,6 @@ func TestSessions_Authenticator(t *testing.T) {
 			assert.Equal(t, tt.want, resp.Code)
 
 			cookies := cookiesByName(resp.Result().Cookies())
-			// request has no client ID: the middleware should assign one
-			assert.NotEmpty(t, cookies[clientIDCookieName].Value)
 			if tt.wantCookie {
 				require.Contains(t, cookies, sessionCookieName)
 				assert.NotEmpty(t, cookies[sessionCookieName].Value)
@@ -363,8 +363,7 @@ func TestSessions_Authenticator(t *testing.T) {
 
 func BenchmarkSessions_Authenticator(b *testing.B) {
 	// Current:
-	// BenchmarkSessions_Authenticator-10    	  306352	      3588 ns/op	    4684 B/op	      55 allocs/op
-	const cookieName = sessionCookieName
+	// BenchmarkSessions_Authenticator-10    	  280453	      3663 ns/op	    4691 B/op	      55 allocs/op
 	h, _ := New(
 		time.Hour,
 		configuration.ServerConfiguration{Key: "secret", Domain: ".example.com", HealthPath: "/healthz"},
@@ -379,7 +378,9 @@ func BenchmarkSessions_Authenticator(b *testing.B) {
 	}))
 
 	req, _ := http.NewRequest(http.MethodGet, "/", nil)
-	req.AddCookie(&http.Cookie{Name: cookieName, Value: generateTestToken([]byte("secret"), time.Hour)(b, h, &http.Request{})})
+	clientID, token := generateTestToken([]byte("secret"), time.Hour)(b, h, &http.Request{})
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	req.AddCookie(&http.Cookie{Name: clientIDCookieName, Value: clientID})
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -394,10 +395,7 @@ func BenchmarkSessions_Authenticator(b *testing.B) {
 }
 
 func TestSessions_authenticateRequest(t *testing.T) {
-	const (
-		validKey   = "secret"
-		cookieName = sessionCookieName
-	)
+	const validKey = "secret"
 	tests := []struct {
 		name      string
 		token     generateTokenFunc
@@ -408,29 +406,31 @@ func TestSessions_authenticateRequest(t *testing.T) {
 		{"valid session", generateTestToken([]byte(validKey), 0), require.NoError, false},
 		{"expired JWT with valid session", generateTestToken([]byte(validKey), -time.Hour), require.NoError, true},
 		{"invalid signature on JWT", generateTestToken([]byte("invalid-key"), 0), require.Error, false},
-		{"invalid cookie", func(testing.TB, Sessions, *http.Request) string { return "invalid" }, require.Error, false},
+		{"invalid cookie", func(testing.TB, Sessions, *http.Request) (string, string) { return "", "invalid" }, require.Error, false},
 		{
 			name: "no session",
-			token: func(tb testing.TB, h Sessions, req *http.Request) string {
-				tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, uuid.New().String(), req)
+			token: func(tb testing.TB, h Sessions, req *http.Request) (string, string) {
+				clientID := uuid.New().String()
+				tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, clientID, req)
 				require.NoError(tb, err)
 				rawToken, err := tok.Sign([]byte(validKey))
 				require.NoError(tb, err)
 				require.NoError(tb, h.DeleteSession(t.Context(), tok.Identity.Email, tok.SessionID))
-				return rawToken
+				return clientID, rawToken
 			},
 			err:       require.Error,
 			wantToken: false,
 		},
 		{
 			name: "unrecognized refresh token",
-			token: func(tb testing.TB, h Sessions, req *http.Request) string {
-				tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, uuid.New().String(), req)
+			token: func(tb testing.TB, h Sessions, req *http.Request) (string, string) {
+				clientID := uuid.New().String()
+				tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, clientID, req)
 				require.NoError(tb, err)
 				tok.RefreshToken = RefreshToken{}
 				rawToken, err := tok.Sign([]byte(validKey))
 				require.NoError(tb, err)
-				return rawToken
+				return clientID, rawToken
 			},
 			err:       require.Error,
 			wantToken: false,
@@ -453,8 +453,9 @@ func TestSessions_authenticateRequest(t *testing.T) {
 
 			req, _ := http.NewRequest(http.MethodGet, "/", nil)
 			if tt.token != nil {
-				token := tt.token(t, s, req)
-				req.AddCookie(&http.Cookie{Name: cookieName, Value: token})
+				clientID, token := tt.token(t, s, req)
+				req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+				req.AddCookie(&http.Cookie{Name: clientIDCookieName, Value: clientID})
 			}
 			identity, updatedToken, err := s.authenticateRequest(req)
 			tt.err(t, err)
@@ -511,20 +512,21 @@ func (f *fakeAuthenticator) ConfirmLogin(_ context.Context, state, code string) 
 	return provider.Identity{Name: "foo", Email: "foo@example.com"}, u, nil
 }
 
-type generateTokenFunc func(tb testing.TB, h Sessions, req *http.Request) string
+type generateTokenFunc func(tb testing.TB, h Sessions, req *http.Request) (string, string)
 
 var _ generateTokenFunc = generateTestToken([]byte{}, 0)
 
 // generateToken returns a test function that generates a token, signed by a key,
 // with a delta time added to the expiration time
-func generateTestToken(key []byte, delta time.Duration) func(tb testing.TB, h Sessions, req *http.Request) string {
-	return func(tb testing.TB, h Sessions, req *http.Request) string {
-		tok, err := h.CreateSession(tb.Context(), provider.Identity{Email: "foo@example.com"}, uuid.New().String(), req)
+func generateTestToken(key []byte, delta time.Duration) func(tb testing.TB, h Sessions, req *http.Request) (string, string) {
+	return func(tb testing.TB, h Sessions, req *http.Request) (string, string) {
+		clientID := uuid.New().String()
+		tok, err := h.CreateSession(tb.Context(), provider.Identity{Email: "foo@example.com"}, clientID, req)
 		require.NoError(tb, err)
 		tok.ExpiresAt.Time = tok.ExpiresAt.Add(delta)
 		rawToken, err := tok.Sign(key)
 		require.NoError(tb, err)
-		return rawToken
+		return clientID, rawToken
 	}
 }
 
