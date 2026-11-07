@@ -42,7 +42,6 @@ type Session struct {
 	RotatedAt                time.Time         `json:"rotatedAt"`
 	Identity                 provider.Identity `json:"identity"`
 	ID                       string            `json:"id"`
-	ClientID                 string            `json:"clientID"`
 	UserAgent                string            `json:"userAgent"`
 	RefreshSecret            []byte            `json:"refreshSecret"`
 	RefreshTokenHash         refreshTokenHash  `json:"refreshTokenHash"`
@@ -98,16 +97,15 @@ func New(
 
 // CreateSession creates a new session and returns a JWT token to be sent back to the client.
 //
-// clientID identifies the browser that requested the session. If not empty, all other sessions of the user for that
-// client are deleted: the browser only holds one session cookie, so those sessions can no longer be used.
+// clientID identifies the browser that requested the session and is used as the session ID. As the browser
+// only holds one session cookie, a user only has one session per client: creating a new session replaces any existing
+// session for that user & client. If clientID is empty, a random session ID is allocated.
 func (s Sessions) CreateSession(ctx context.Context, identity provider.Identity, clientID string, r *http.Request) (Token, error) {
-	if clientID != "" {
-		s.deleteClientSessions(ctx, identity.Email, clientID)
+	if clientID == "" {
+		return Token{}, fmt.Errorf("client ID cannot be empty")
 	}
-	// allocate a session ID
-	sessionID := uuid.New().String()
 	// create the session token that will be sent back to the client
-	token := generateToken(sessionID, identity)
+	token := generateToken(clientID, identity)
 	// store a session in the data store
 	var userAgent string
 	if r != nil {
@@ -116,44 +114,22 @@ func (s Sessions) CreateSession(ctx context.Context, identity provider.Identity,
 	now := time.Now()
 	refreshSecret := generateRefreshToken()
 	session := Session{
-		ID:               sessionID,
-		ClientID:         clientID,
+		ID:               clientID,
 		Identity:         identity,
 		RefreshSecret:    refreshSecret[:],
 		RefreshTokenHash: token.RefreshToken.hash(),
 		IssuedAt:         now,
 		UserAgent:        userAgent,
 	}
-	if err := s.put(ctx, token.Identity.Email, sessionID, session); err != nil {
+	if err := s.put(ctx, token.Identity.Email, clientID, session); err != nil {
 		return token, err
 	}
 	return token, nil
 }
 
-// deleteClientSessions deletes all sessions of a user for a given client ID.
-// Failure to delete a session is not fatal: the session will eventually expire.
-func (s Sessions) deleteClientSessions(ctx context.Context, email string, clientID string) {
-	sessions, err := s.List(ctx, email)
-	if err != nil {
-		s.logger.Warn("failed to list sessions", slog.Any("err", err))
-		return
-	}
-	for _, session := range sessions {
-		if session.ClientID != clientID {
-			continue
-		}
-		if err = s.del(ctx, email, session.ID); err != nil && !errors.Is(err, ErrSessionNotFound) {
-			s.logger.Warn("failed to delete session", slog.Any("err", err), slog.String("session_id", session.ID))
-		}
-	}
-}
-
 // Validate validates that the session in the token exists in the store.  If required, it refreshes the token
 // by rotating the refresh token. It returns the updated token.
-//
-// Rotating the refresh token doesn't create a new session, so there are no other sessions to clean up for the client.
-// clientID is only used to link sessions created before client IDs were introduced to their client.
-func (s Sessions) Validate(ctx context.Context, token Token, clientID string, r *http.Request) (Token, error) {
+func (s Sessions) Validate(ctx context.Context, token Token, r *http.Request) (Token, error) {
 	// if the session doesn't exist, it's an error
 	session, err := s.get(ctx, token.Identity.Email, token.SessionID)
 	if err != nil {
@@ -180,9 +156,6 @@ func (s Sessions) Validate(ctx context.Context, token Token, clientID string, r 
 	// a second request writing back the old refresh token.
 	if r != nil {
 		session.UserAgent = r.Header.Get("User-Agent")
-	}
-	if session.ClientID == "" {
-		session.ClientID = clientID
 	}
 	return token, s.update(ctx, token.Identity.Email, token.SessionID, session)
 }
@@ -253,8 +226,7 @@ func (s Sessions) LoginHandler(logger *slog.Logger) http.Handler {
 		ulog.Debug("user validated successfully", "redirectURL", redirectURL)
 
 		// create a new session & token for the new session
-		clientID := s.clientID(w, r)
-		tok, err := s.CreateSession(r.Context(), userInfo, clientID, r)
+		tok, err := s.CreateSession(r.Context(), userInfo, s.clientID(w, r), r)
 		if err != nil {
 			ulog.Error("failed to create token", slog.Any("err", err))
 			http.Error(w, "failed to create session", http.StatusInternalServerError)
@@ -283,8 +255,9 @@ type identityKey struct{}
 func (s Sessions) Authenticator(redirectOnError bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			clientID := s.clientID(w, r)
-			identity, signedToken, err := s.authenticateRequest(r, clientID)
+			// make sure the browser has a client ID by the time it logs in
+			_ = s.clientID(w, r)
+			identity, signedToken, err := s.authenticateRequest(r)
 			if err == nil {
 				if signedToken != "" {
 					// token was updated, set the cookie to inform the browser
@@ -344,7 +317,7 @@ func SetAuthenticatedUser(r *http.Request, identity provider.Identity) *http.Req
 	return r.WithContext(context.WithValue(r.Context(), identityKey{}, identity))
 }
 
-func (s Sessions) authenticateRequest(r *http.Request, clientID string) (provider.Identity, string, error) {
+func (s Sessions) authenticateRequest(r *http.Request) (provider.Identity, string, error) {
 	// get the jwt token
 	var token Token
 	cookie, err := r.Cookie(sessionCookieName)
@@ -357,7 +330,7 @@ func (s Sessions) authenticateRequest(r *http.Request, clientID string) (provide
 	}
 
 	// validate the token
-	newToken, err := s.Validate(r.Context(), token, clientID, r)
+	newToken, err := s.Validate(r.Context(), token, r)
 	switch {
 	case errors.Is(err, ErrPreviousRefreshTokenExpired),
 		errors.Is(err, ErrInvalidRefreshToken),
