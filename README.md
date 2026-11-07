@@ -121,8 +121,6 @@ server:
   addrInt: :8080
   # External address for browser login callbacks, session UI, and API
   addrExt: :8081
-  # Name of the HTTP session cookie
-  cookieName: forward-auth-session
   # Root domain for which the cookie is valid (must cover all protected subdomains)
   domain: .example.com
   # Secret key used to sign session tokens (min 32 characters; can be set via SERVER_KEY)
@@ -240,9 +238,10 @@ spec:
       - X-Forwarded-User-Email
       - X-Forwarded-User-Name
       - X-Forwarded-User-Groups
-    # Propagate renewed session cookies back to the browser
+    # Propagate renewed session cookies and the client ID cookie back to the browser
     addAuthCookiesToResponse:
       - forward-auth-session
+      - forward-auth-client
 ```
 
 ### 2. Route the Auth Service

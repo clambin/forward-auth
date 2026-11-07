@@ -1,5 +1,4 @@
 server:
-  cookieName: forward-auth-session
   key: my-token-signing-key
   domain: ""
   healthPath: /healthz

@@ -20,8 +20,7 @@ func TestHandleListSessions(t *testing.T) {
 	const username = "test@example.com"
 
 	cfg := configuration.ServerConfiguration{
-		CookieName: "forward-auth-session",
-		Key:        "secret",
+		Key: "secret",
 	}
 
 	sessions, err := session.New(
@@ -32,7 +31,7 @@ func TestHandleListSessions(t *testing.T) {
 		slog.New(slog.DiscardHandler),
 	)
 	require.NoError(t, err)
-	_, err = sessions.CreateSession(t.Context(), provider.Identity{Email: username}, &http.Request{})
+	_, err = sessions.CreateSession(t.Context(), provider.Identity{Email: username}, "", &http.Request{})
 	require.NoError(t, err)
 
 	h := routeSessions(sessions, slog.New(slog.DiscardHandler))
@@ -62,8 +61,7 @@ func TestHandleDeleteSession(t *testing.T) {
 	const username = "test@example.com"
 	const invalidUsername = "invalid@example.com"
 	cfg := configuration.ServerConfiguration{
-		CookieName: "forward-auth-session",
-		Key:        "secret",
+		Key: "secret",
 	}
 
 	tests := []struct {
@@ -94,7 +92,7 @@ func TestHandleDeleteSession(t *testing.T) {
 
 			tokens := make(map[string]session.Token)
 			for _, user := range []string{username, invalidUsername} {
-				tokens[user], err = sessions.CreateSession(t.Context(), provider.Identity{Email: user}, &http.Request{})
+				tokens[user], err = sessions.CreateSession(t.Context(), provider.Identity{Email: user}, "", &http.Request{})
 				require.NoError(t, err)
 			}
 
