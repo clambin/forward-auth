@@ -18,8 +18,16 @@ import (
 )
 
 const (
+	// namespaceKeyPrefix is the prefix for all keys in the Redis cache.
 	namespaceKeyPrefix = "forward-auth"
+	// subsystemKeyPrefix is the prefix for all session keys in the Redis cache.
 	subsystemKeyPrefix = "session"
+	// sessionCookieName is the name of the cookie holding the session token.
+	sessionCookieName = namespaceKeyPrefix + "-session"
+	// clientIDCookieName is the name of the cookie holding the client ID.
+	clientIDCookieName = namespaceKeyPrefix + "-client"
+	// clientIDCookieMaxAge determines how long the browser keeps the client ID cookie.
+	clientIDCookieMaxAge = 400 * 24 * time.Hour // max allowed by Chrome
 )
 
 var (
@@ -88,11 +96,16 @@ func New(
 }
 
 // CreateSession creates a new session and returns a JWT token to be sent back to the client.
-func (s Sessions) CreateSession(ctx context.Context, identity provider.Identity, r *http.Request) (Token, error) {
-	// allocate a session ID
-	sessionID := uuid.New().String()
+//
+// clientID identifies the browser that requested the session and is used as the session ID. As the browser
+// only holds one session cookie, a user only has one session per client: creating a new session replaces any existing
+// session for that user & client. If clientID is empty, a random session ID is allocated.
+func (s Sessions) CreateSession(ctx context.Context, identity provider.Identity, clientID string, r *http.Request) (Token, error) {
+	if clientID == "" {
+		return Token{}, fmt.Errorf("client ID cannot be empty")
+	}
 	// create the session token that will be sent back to the client
-	token := generateToken(sessionID, identity)
+	token := generateToken(clientID, identity)
 	// store a session in the data store
 	var userAgent string
 	if r != nil {
@@ -101,14 +114,14 @@ func (s Sessions) CreateSession(ctx context.Context, identity provider.Identity,
 	now := time.Now()
 	refreshSecret := generateRefreshToken()
 	session := Session{
-		ID:               sessionID,
+		ID:               clientID,
 		Identity:         identity,
 		RefreshSecret:    refreshSecret[:],
 		RefreshTokenHash: token.RefreshToken.hash(),
 		IssuedAt:         now,
 		UserAgent:        userAgent,
 	}
-	if err := s.put(ctx, token.Identity.Email, sessionID, session); err != nil {
+	if err := s.put(ctx, token.Identity.Email, clientID, session); err != nil {
 		return token, err
 	}
 	return token, nil
@@ -213,7 +226,7 @@ func (s Sessions) LoginHandler(logger *slog.Logger) http.Handler {
 		ulog.Debug("user validated successfully", "redirectURL", redirectURL)
 
 		// create a new session & token for the new session
-		tok, err := s.CreateSession(r.Context(), userInfo, r)
+		tok, err := s.CreateSession(r.Context(), userInfo, s.clientID(w, r), r)
 		if err != nil {
 			ulog.Error("failed to create token", slog.Any("err", err))
 			http.Error(w, "failed to create session", http.StatusInternalServerError)
@@ -228,7 +241,7 @@ func (s Sessions) LoginHandler(logger *slog.Logger) http.Handler {
 			return
 		}
 
-		setTokenCookie(w, s.cfg.CookieName, signedToken, s.cfg.Domain)
+		setTokenCookie(w, signedToken, s.cfg.Domain)
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 		ulog.Info("login successful")
 	})
@@ -242,11 +255,13 @@ type identityKey struct{}
 func (s Sessions) Authenticator(redirectOnError bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// make sure the browser has a client ID by the time it logs in
+			//_ = s.clientID(w, r)
 			identity, signedToken, err := s.authenticateRequest(r)
 			if err == nil {
 				if signedToken != "" {
 					// token was updated, set the cookie to inform the browser
-					setTokenCookie(w, s.cfg.CookieName, signedToken, s.cfg.Domain)
+					setTokenCookie(w, signedToken, s.cfg.Domain)
 				}
 				next.ServeHTTP(w, SetAuthenticatedUser(r, identity))
 				return
@@ -305,7 +320,7 @@ func SetAuthenticatedUser(r *http.Request, identity provider.Identity) *http.Req
 func (s Sessions) authenticateRequest(r *http.Request) (provider.Identity, string, error) {
 	// get the jwt token
 	var token Token
-	cookie, err := r.Cookie(s.cfg.CookieName)
+	cookie, err := r.Cookie(sessionCookieName)
 	if err == nil {
 		// parse the token
 		token, err = ParseToken(cookie.Value, []byte(s.cfg.Key))
@@ -339,12 +354,34 @@ func (s Sessions) authenticateRequest(r *http.Request) (provider.Identity, strin
 	return newToken.Identity, signedToken, nil
 }
 
+// clientID returns the client ID of the request. If the request doesn't have a (valid) client ID,
+// it generates a new one and adds it to the response, so the browser sends it in subsequent requests.
+func (s Sessions) clientID(w http.ResponseWriter, r *http.Request) string {
+	if cookie, err := r.Cookie(clientIDCookieName); err == nil {
+		if clientID, err := uuid.Parse(cookie.Value); err == nil {
+			return clientID.String()
+		}
+	}
+	clientID := uuid.New().String()
+	http.SetCookie(w, &http.Cookie{
+		Name:     clientIDCookieName,
+		Value:    clientID,
+		Domain:   s.cfg.Domain,
+		Path:     "/",
+		MaxAge:   int(clientIDCookieMaxAge.Seconds()),
+		Secure:   true,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	return clientID
+}
+
 // setTokenCookie adds a signed token cookie on the response.
-func setTokenCookie(w http.ResponseWriter, cookieName, signedToken, domain string) {
+func setTokenCookie(w http.ResponseWriter, signedToken, domain string) {
 	// Expires is empty, so the browser sends an expired cookie
 	// which we may then attempt to refresh using the refresh token
 	http.SetCookie(w, &http.Cookie{
-		Name:     cookieName,
+		Name:     sessionCookieName,
 		Value:    signedToken,
 		Domain:   domain,
 		Path:     "/",

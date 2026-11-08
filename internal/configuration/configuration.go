@@ -22,7 +22,6 @@ import (
 func Default() Configuration {
 	return Configuration{
 		Server: ServerConfiguration{
-			CookieName: "forward-auth-session",
 			Key:        "",
 			HealthPath: "/healthz",
 			AddrInt:    ":8080",
@@ -67,7 +66,6 @@ type Configuration struct {
 }
 
 type ServerConfiguration struct {
-	CookieName string `yaml:"cookieName"`
 	Key        string `yaml:"key" env:"KEY"`
 	Domain     string `yaml:"domain"`
 	HealthPath string `yaml:"healthPath"`
@@ -77,7 +75,6 @@ type ServerConfiguration struct {
 
 func (c ServerConfiguration) IsValid() error {
 	return errors.Join(
-		validate.PrefixError("cookieName", validate.IsNotZero(c.CookieName)),
 		validate.PrefixError("key", isMinLength(c.Key, 32)),
 		validate.PrefixError("domain", validate.IsNotZero(c.Domain)),
 		validate.PrefixError("healthPath", isAbsolutePath(c.HealthPath)),

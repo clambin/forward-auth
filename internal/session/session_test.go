@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/clambin/forward-auth/internal/authn/provider"
 	"github.com/clambin/forward-auth/internal/configuration"
@@ -52,7 +53,7 @@ func TestSessions(t *testing.T) {
 
 			// create a session
 			identity := provider.Identity{Email: "foo@example.com", Name: "foo", Subject: "1234"}
-			token, err := sessions.CreateSession(ctx, identity, req)
+			token, err := sessions.CreateSession(ctx, identity, uuid.New().String(), req)
 			require.NoError(t, err)
 
 			assert.Equal(t, identity, token.Identity)
@@ -222,7 +223,6 @@ func TestSessions_LoginHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := configuration.ServerConfiguration{
-				CookieName: "test",
 				Domain:     ".example.com",
 				Key:        "secret",
 				HealthPath: "/healthz",
@@ -249,10 +249,10 @@ func TestSessions_LoginHandler(t *testing.T) {
 			}
 
 			require.Equal(t, tt.want.location, resp.Header().Get("Location"))
-			cookies := resp.Result().Cookies()
-			require.Len(t, cookies, 1)
-			require.Equal(t, cfg.CookieName, cookies[0].Name)
-			assert.NotZero(t, cookies[0].Value)
+			cookies := cookiesByName(resp.Result().Cookies())
+			require.Len(t, cookies, 2)
+			assert.NotZero(t, cookies[sessionCookieName].Value)
+			assert.NotZero(t, cookies[clientIDCookieName].Value)
 		})
 	}
 }
@@ -312,7 +312,6 @@ func TestSessions_Authenticator(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := configuration.ServerConfiguration{
-				CookieName: "test",
 				Key:        validKey,
 				Domain:     ".example.com",
 				HealthPath: "/healthz",
@@ -334,7 +333,9 @@ func TestSessions_Authenticator(t *testing.T) {
 
 			req, _ := http.NewRequest(cmp.Or(tt.method, http.MethodGet), "/", nil)
 			if tt.token != nil {
-				req.AddCookie(&http.Cookie{Name: cfg.CookieName, Value: tt.token(t, h, req)})
+				clientID, token := tt.token(t, h, req)
+				req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+				req.AddCookie(&http.Cookie{Name: clientIDCookieName, Value: clientID})
 			}
 			for k, vs := range tt.header {
 				for _, v := range vs {
@@ -345,11 +346,12 @@ func TestSessions_Authenticator(t *testing.T) {
 			s.ServeHTTP(resp, req)
 			assert.Equal(t, tt.want, resp.Code)
 
+			cookies := cookiesByName(resp.Result().Cookies())
 			if tt.wantCookie {
-				cookies := resp.Result().Cookies()
-				require.Len(t, cookies, 1)
-				assert.Equal(t, cfg.CookieName, cookies[0].Name)
-				assert.NotEmpty(t, cookies[0].Value)
+				require.Contains(t, cookies, sessionCookieName)
+				assert.NotEmpty(t, cookies[sessionCookieName].Value)
+			} else {
+				assert.NotContains(t, cookies, sessionCookieName)
 			}
 
 			if resp.Code == http.StatusSeeOther {
@@ -361,11 +363,10 @@ func TestSessions_Authenticator(t *testing.T) {
 
 func BenchmarkSessions_Authenticator(b *testing.B) {
 	// Current:
-	// BenchmarkSessions_Authenticator-10    	  306352	      3588 ns/op	    4684 B/op	      55 allocs/op
-	const cookieName = "test"
+	// BenchmarkSessions_Authenticator-10    	  280453	      3663 ns/op	    4691 B/op	      55 allocs/op
 	h, _ := New(
 		time.Hour,
-		configuration.ServerConfiguration{CookieName: cookieName, Key: "secret", Domain: ".example.com", HealthPath: "/healthz"},
+		configuration.ServerConfiguration{Key: "secret", Domain: ".example.com", HealthPath: "/healthz"},
 		configuration.StorageConfiguration{},
 		&fakeAuthenticator{},
 		slog.New(slog.DiscardHandler),
@@ -377,7 +378,9 @@ func BenchmarkSessions_Authenticator(b *testing.B) {
 	}))
 
 	req, _ := http.NewRequest(http.MethodGet, "/", nil)
-	req.AddCookie(&http.Cookie{Name: cookieName, Value: generateTestToken([]byte("secret"), time.Hour)(b, h, &http.Request{})})
+	clientID, token := generateTestToken([]byte("secret"), time.Hour)(b, h, &http.Request{})
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	req.AddCookie(&http.Cookie{Name: clientIDCookieName, Value: clientID})
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -392,10 +395,7 @@ func BenchmarkSessions_Authenticator(b *testing.B) {
 }
 
 func TestSessions_authenticateRequest(t *testing.T) {
-	const (
-		validKey   = "secret"
-		cookieName = "my-cookie"
-	)
+	const validKey = "secret"
 	tests := []struct {
 		name      string
 		token     generateTokenFunc
@@ -406,29 +406,31 @@ func TestSessions_authenticateRequest(t *testing.T) {
 		{"valid session", generateTestToken([]byte(validKey), 0), require.NoError, false},
 		{"expired JWT with valid session", generateTestToken([]byte(validKey), -time.Hour), require.NoError, true},
 		{"invalid signature on JWT", generateTestToken([]byte("invalid-key"), 0), require.Error, false},
-		{"invalid cookie", func(testing.TB, Sessions, *http.Request) string { return "invalid" }, require.Error, false},
+		{"invalid cookie", func(testing.TB, Sessions, *http.Request) (string, string) { return "", "invalid" }, require.Error, false},
 		{
 			name: "no session",
-			token: func(tb testing.TB, h Sessions, req *http.Request) string {
-				tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, req)
+			token: func(tb testing.TB, h Sessions, req *http.Request) (string, string) {
+				clientID := uuid.New().String()
+				tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, clientID, req)
 				require.NoError(tb, err)
 				rawToken, err := tok.Sign([]byte(validKey))
 				require.NoError(tb, err)
 				require.NoError(tb, h.DeleteSession(t.Context(), tok.Identity.Email, tok.SessionID))
-				return rawToken
+				return clientID, rawToken
 			},
 			err:       require.Error,
 			wantToken: false,
 		},
 		{
 			name: "unrecognized refresh token",
-			token: func(tb testing.TB, h Sessions, req *http.Request) string {
-				tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, req)
+			token: func(tb testing.TB, h Sessions, req *http.Request) (string, string) {
+				clientID := uuid.New().String()
+				tok, err := h.CreateSession(t.Context(), provider.Identity{Email: "foo@example.com"}, clientID, req)
 				require.NoError(tb, err)
 				tok.RefreshToken = RefreshToken{}
 				rawToken, err := tok.Sign([]byte(validKey))
 				require.NoError(tb, err)
-				return rawToken
+				return clientID, rawToken
 			},
 			err:       require.Error,
 			wantToken: false,
@@ -438,9 +440,8 @@ func TestSessions_authenticateRequest(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := configuration.ServerConfiguration{
-				CookieName: cookieName,
-				Key:        validKey,
-				Domain:     ".example.com",
+				Key:    validKey,
+				Domain: ".example.com",
 			}
 			s, _ := New(
 				time.Hour,
@@ -452,8 +453,9 @@ func TestSessions_authenticateRequest(t *testing.T) {
 
 			req, _ := http.NewRequest(http.MethodGet, "/", nil)
 			if tt.token != nil {
-				token := tt.token(t, s, req)
-				req.AddCookie(&http.Cookie{Name: cookieName, Value: token})
+				clientID, token := tt.token(t, s, req)
+				req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+				req.AddCookie(&http.Cookie{Name: clientIDCookieName, Value: clientID})
 			}
 			identity, updatedToken, err := s.authenticateRequest(req)
 			tt.err(t, err)
@@ -510,20 +512,116 @@ func (f *fakeAuthenticator) ConfirmLogin(_ context.Context, state, code string) 
 	return provider.Identity{Name: "foo", Email: "foo@example.com"}, u, nil
 }
 
-type generateTokenFunc func(tb testing.TB, h Sessions, req *http.Request) string
+type generateTokenFunc func(tb testing.TB, h Sessions, req *http.Request) (string, string)
 
 var _ generateTokenFunc = generateTestToken([]byte{}, 0)
 
 // generateToken returns a test function that generates a token, signed by a key,
 // with a delta time added to the expiration time
-func generateTestToken(key []byte, delta time.Duration) func(tb testing.TB, h Sessions, req *http.Request) string {
-	return func(tb testing.TB, h Sessions, req *http.Request) string {
-		tok, err := h.CreateSession(tb.Context(), provider.Identity{Email: "foo@example.com"}, req)
+func generateTestToken(key []byte, delta time.Duration) func(tb testing.TB, h Sessions, req *http.Request) (string, string) {
+	return func(tb testing.TB, h Sessions, req *http.Request) (string, string) {
+		clientID := uuid.New().String()
+		tok, err := h.CreateSession(tb.Context(), provider.Identity{Email: "foo@example.com"}, clientID, req)
 		require.NoError(tb, err)
 		tok.ExpiresAt.Time = tok.ExpiresAt.Add(delta)
 		rawToken, err := tok.Sign(key)
 		require.NoError(tb, err)
-		return rawToken
+		return clientID, rawToken
+	}
+}
+
+func cookiesByName(cookies []*http.Cookie) map[string]*http.Cookie {
+	m := make(map[string]*http.Cookie, len(cookies))
+	for _, c := range cookies {
+		m[c.Name] = c
+	}
+	return m
+}
+
+func TestSessions_clientID(t *testing.T) {
+	cfg := configuration.ServerConfiguration{Domain: ".example.com"}
+	s, err := New(time.Hour, cfg, configuration.StorageConfiguration{}, nil, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+	const cookieName = clientIDCookieName
+
+	// no client ID: a new one is generated and added to the response
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	resp := httptest.NewRecorder()
+	clientID := s.clientID(resp, req)
+	require.NotEmpty(t, clientID)
+	cookies := cookiesByName(resp.Result().Cookies())
+	require.Contains(t, cookies, cookieName)
+	assert.Equal(t, clientID, cookies[cookieName].Value)
+	assert.Equal(t, "example.com", cookies[cookieName].Domain)
+	assert.Positive(t, cookies[cookieName].MaxAge)
+	assert.True(t, cookies[cookieName].HttpOnly)
+	assert.True(t, cookies[cookieName].Secure)
+
+	// valid client ID: it is reused and no cookie is set
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: cookieName, Value: clientID})
+	resp = httptest.NewRecorder()
+	assert.Equal(t, clientID, s.clientID(resp, req))
+	assert.Empty(t, resp.Result().Cookies())
+
+	// invalid client ID: a new one is generated
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: cookieName, Value: "not-a-uuid"})
+	resp = httptest.NewRecorder()
+	newClientID := s.clientID(resp, req)
+	assert.NotEqual(t, "not-a-uuid", newClientID)
+	assert.Equal(t, newClientID, cookiesByName(resp.Result().Cookies())[cookieName].Value)
+}
+
+func TestSessions_CreateSession_OneSessionPerClient(t *testing.T) {
+	endpoint := testutils.RedisTestContainer(t)
+
+	tests := []struct {
+		name string
+		cfg  configuration.StorageConfiguration
+	}{
+		{"redis", configuration.StorageConfiguration{Type: "redis", Redis: configuration.StorageRedisConfiguration{Addr: endpoint}}},
+		{"memory", configuration.StorageConfiguration{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			s, err := New(time.Hour, configuration.ServerConfiguration{}, tt.cfg, nil, slog.New(slog.DiscardHandler))
+			require.NoError(t, err)
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			const email = "client@example.com"
+			identity := provider.Identity{Email: email}
+
+			// the client ID is used as the session ID
+			first, err := s.CreateSession(ctx, identity, "client-a", req)
+			require.NoError(t, err)
+			assert.Equal(t, "client-a", first.SessionID)
+			_, err = s.CreateSession(ctx, identity, "client-b", req)
+			require.NoError(t, err)
+
+			// logging in again on the same client replaces the session
+			second, err := s.CreateSession(ctx, identity, "client-a", req)
+			require.NoError(t, err)
+			activeSessions, err := s.List(ctx, email)
+			require.NoError(t, err)
+			require.Len(t, activeSessions, 2)
+
+			// the token of the replaced session is no longer accepted
+			first.ExpiresAt.Time = time.Now().Add(-time.Minute)
+			_, err = s.Validate(ctx, first, req)
+			require.ErrorIs(t, err, ErrInvalidRefreshToken)
+			_, err = s.Validate(ctx, second, req)
+			require.NoError(t, err)
+
+			// another user on the same client gets their own session
+			other, err := s.CreateSession(ctx, provider.Identity{Email: "other@example.com"}, "client-a", req)
+			require.NoError(t, err)
+			_, err = s.Validate(ctx, other, req)
+			require.NoError(t, err)
+			_, err = s.Validate(ctx, second, req)
+			require.NoError(t, err)
+		})
 	}
 }
 
